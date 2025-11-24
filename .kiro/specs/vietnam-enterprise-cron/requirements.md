@@ -382,6 +382,142 @@ The system supports full timezone support for Vietnamese operations (default: As
 22. WHEN the login form detects multiple failed login attempts from the same IP (5+ failures in 15 minutes), THE System SHALL implement temporary rate limiting with appropriate user messaging
 23. WHEN the login page loads, THE System SHALL include CSRF protection tokens for form submission security
 24. WHEN the login page is served, THE System SHALL include appropriate security headers (Content-Security-Policy, X-Frame-Options, X-Content-Type-Options)
+25. WHEN a user successfully authenticates, THE System SHALL extract the user's assigned roles from the database (for database mode) or from JWT claims (for Keycloak mode)
+26. WHEN a user has the "Admin" role, THE System SHALL grant all permissions: job:read, job:write, job:execute, job:delete, execution:read, variable:read, variable:write, user:manage, system:config
+27. WHEN a user has the "Regular User" role, THE System SHALL grant limited permissions: job:read, job:execute, execution:read, variable:read
+28. WHEN a user logs in successfully, THE System SHALL store their role and permissions in the JWT token for subsequent authorization checks
+29. WHEN a user with "Admin" role accesses the dashboard, THE System SHALL display all administrative functions including user management, system configuration, and job deletion
+30. WHEN a user with "Regular User" role accesses the dashboard, THE System SHALL hide administrative functions and only show job viewing, execution, and monitoring capabilities
+31. WHEN a user attempts to access a resource without required permissions, THE System SHALL return 403 Forbidden status with a clear message indicating insufficient permissions
+32. WHEN the login page displays in database mode, THE System SHALL indicate the user's role after successful authentication
+33. WHEN an "Admin" user is logged in, THE System SHALL display an "Admin" badge or indicator in the dashboard header
+34. WHEN a "Regular User" is logged in, THE System SHALL display a "User" badge or indicator in the dashboard header
+
+### Requirement 19.1
+
+**User Story:** As a security administrator, I want comprehensive Role-Based Access Control (RBAC) with Admin and Regular User roles, so that I can control access to system resources based on user responsibilities and enforce principle of least privilege.
+
+#### Acceptance Criteria
+
+##### Role Definitions
+
+1. WHEN the system initializes, THE System SHALL support two predefined roles: "Admin" and "Regular User"
+2. WHEN an "Admin" role is assigned, THE System SHALL grant the following permissions:
+   - job:read - View all jobs
+   - job:write - Create and edit jobs
+   - job:execute - Manually trigger job execution
+   - job:delete - Delete jobs
+   - job:import - Import job definitions
+   - job:export - Export job definitions
+   - execution:read - View all execution history
+   - execution:stop - Stop running executions
+   - variable:read - View all variables (global and job-specific)
+   - variable:write - Create, edit, and delete variables
+   - variable:encrypt - Manage encrypted sensitive variables
+   - webhook:read - View webhook configurations
+   - webhook:write - Create, edit, and delete webhooks
+   - user:manage - Create, edit, and delete users (database mode only)
+   - role:assign - Assign roles to users
+   - system:config - View and modify system configuration
+   - system:audit - Access audit logs
+   - dashboard:admin - Access administrative dashboard features
+
+3. WHEN a "Regular User" role is assigned, THE System SHALL grant the following limited permissions:
+   - job:read - View jobs (read-only)
+   - job:execute - Manually trigger job execution
+   - execution:read - View execution history (limited to jobs they executed)
+   - variable:read - View non-sensitive variables only
+   - dashboard:user - Access basic dashboard features
+
+##### Resource Access Control - Jobs
+
+4. WHEN a user with job:read permission accesses GET /api/jobs, THE System SHALL return the list of jobs
+5. WHEN a user without job:read permission accesses GET /api/jobs, THE System SHALL return 403 Forbidden
+6. WHEN a user with job:write permission accesses POST /api/jobs, THE System SHALL allow job creation
+7. WHEN a user without job:write permission accesses POST /api/jobs, THE System SHALL return 403 Forbidden
+8. WHEN a user with job:write permission accesses PUT /api/jobs/:id, THE System SHALL allow job modification
+9. WHEN a user without job:write permission accesses PUT /api/jobs/:id, THE System SHALL return 403 Forbidden
+10. WHEN a user with job:delete permission accesses DELETE /api/jobs/:id, THE System SHALL allow job deletion
+11. WHEN a user without job:delete permission accesses DELETE /api/jobs/:id, THE System SHALL return 403 Forbidden
+12. WHEN a user with job:execute permission accesses POST /api/jobs/:id/trigger, THE System SHALL allow manual job execution
+13. WHEN a user without job:execute permission accesses POST /api/jobs/:id/trigger, THE System SHALL return 403 Forbidden
+
+##### Resource Access Control - Executions
+
+14. WHEN an Admin user accesses GET /api/executions, THE System SHALL return all execution history across all jobs
+15. WHEN a Regular User accesses GET /api/executions, THE System SHALL return only executions they triggered
+16. WHEN a user with execution:stop permission accesses POST /api/executions/:id/stop, THE System SHALL allow stopping a running execution
+17. WHEN a user without execution:stop permission accesses POST /api/executions/:id/stop, THE System SHALL return 403 Forbidden
+
+##### Resource Access Control - Variables
+
+18. WHEN an Admin user accesses GET /api/variables, THE System SHALL return all variables including encrypted sensitive variables (with masked values)
+19. WHEN a Regular User accesses GET /api/variables, THE System SHALL return only non-sensitive variables
+20. WHEN a user with variable:write permission accesses POST /api/variables, THE System SHALL allow variable creation
+21. WHEN a user without variable:write permission accesses POST /api/variables, THE System SHALL return 403 Forbidden
+22. WHEN a user with variable:encrypt permission creates a sensitive variable, THE System SHALL encrypt the value at rest
+23. WHEN a user without variable:encrypt permission attempts to create a sensitive variable, THE System SHALL return 403 Forbidden
+
+##### Resource Access Control - Webhooks
+
+24. WHEN a user with webhook:read permission accesses GET /api/webhooks, THE System SHALL return webhook configurations
+25. WHEN a user without webhook:read permission accesses GET /api/webhooks, THE System SHALL return 403 Forbidden
+26. WHEN a user with webhook:write permission accesses POST /api/webhooks, THE System SHALL allow webhook creation with signature generation
+27. WHEN a user without webhook:write permission accesses POST /api/webhooks, THE System SHALL return 403 Forbidden
+
+##### Resource Access Control - User Management
+
+28. WHEN a user with user:manage permission accesses GET /api/users, THE System SHALL return list of all users
+29. WHEN a user without user:manage permission accesses GET /api/users, THE System SHALL return 403 Forbidden
+30. WHEN a user with user:manage permission accesses POST /api/users, THE System SHALL allow user creation
+31. WHEN a user without user:manage permission accesses POST /api/users, THE System SHALL return 403 Forbidden
+32. WHEN a user with role:assign permission accesses PUT /api/users/:id/roles, THE System SHALL allow role assignment
+33. WHEN a user without role:assign permission accesses PUT /api/users/:id/roles, THE System SHALL return 403 Forbidden
+34. WHEN a user attempts to modify their own roles, THE System SHALL return 403 Forbidden to prevent privilege escalation
+
+##### Resource Access Control - System Configuration
+
+35. WHEN a user with system:config permission accesses GET /api/system/config, THE System SHALL return system configuration
+36. WHEN a user without system:config permission accesses GET /api/system/config, THE System SHALL return 403 Forbidden
+37. WHEN a user with system:audit permission accesses GET /api/system/audit-logs, THE System SHALL return audit logs
+38. WHEN a user without system:audit permission accesses GET /api/system/audit-logs, THE System SHALL return 403 Forbidden
+
+##### Dashboard Access Control
+
+39. WHEN an Admin user accesses /dashboard, THE System SHALL display all pages: Jobs, Executions, Variables, Webhooks, Users, System Settings, Audit Logs
+40. WHEN a Regular User accesses /dashboard, THE System SHALL display only: Jobs (read-only), Executions (filtered), Variables (non-sensitive)
+41. WHEN a Regular User attempts to access /dashboard/users, THE System SHALL return 403 Forbidden or hide the navigation link
+42. WHEN a Regular User views a job in the dashboard, THE System SHALL hide "Edit" and "Delete" buttons (show only "Execute" button)
+43. WHEN an Admin user views a job in the dashboard, THE System SHALL display all action buttons: View, Edit, Delete, Execute, Export
+
+##### Import/Export Access Control
+
+44. WHEN a user with job:import permission uploads a job definition, THE System SHALL validate and import the job
+45. WHEN a user without job:import permission uploads a job definition, THE System SHALL return 403 Forbidden
+46. WHEN a user with job:export permission requests job export, THE System SHALL generate and provide the export file with sensitive data masked
+47. WHEN a user without job:export permission requests job export, THE System SHALL return 403 Forbidden
+
+##### Audit and Logging
+
+48. WHEN any user performs an action, THE System SHALL log the operation with user_id, username, role, action, resource, timestamp, IP address, and result (success/failure)
+49. WHEN a user is denied access due to insufficient permissions, THE System SHALL log the denial with user_id, username, requested_permission, resource, and timestamp
+50. WHEN an Admin views audit logs, THE System SHALL display all operations including permission denials and role assignments
+51. WHEN a Regular User attempts to view audit logs, THE System SHALL return 403 Forbidden
+
+##### Security and Validation
+
+52. WHEN a user's role is changed, THE System SHALL invalidate all existing JWT tokens for that user to force re-authentication
+53. WHEN a user is disabled or deleted, THE System SHALL immediately revoke all active sessions for that user
+54. WHEN the system validates permissions, THE System SHALL check both user-level and role-level permissions (union of all permissions)
+55. WHEN a permission check fails, THE System SHALL return a clear error message indicating which permission is required
+56. WHEN displaying permission-denied errors, THE System SHALL NOT reveal the existence of resources the user cannot access (return 404 instead of 403 for non-existent or inaccessible resources)
+
+##### Initial Setup
+
+57. WHEN the system is initialized for the first time, THE System SHALL create a default "admin" user with "Admin" role and credentials: username "admin", password "admin123"
+58. WHEN the system is initialized, THE System SHALL create default "Admin" and "Regular User" roles with appropriate permissions
+59. WHEN the default admin user first logs in, THE System SHALL prompt or recommend changing the default password
+60. WHEN additional roles are needed, THE System SHALL support creating custom roles with specific permission combinations (future enhancement)
 
 ### Requirement 20
 
