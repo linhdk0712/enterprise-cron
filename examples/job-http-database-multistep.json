@@ -1,0 +1,105 @@
+{
+    "name": "Simple HTTP to Database Pipeline",
+    "description": "Ví dụ đơn giản: Lấy dữ liệu từ API và lưu vào database",
+    "schedule": {
+        "type": "fixed_rate",
+        "interval_seconds": 600
+    },
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": null
+    },
+    "steps": [
+        {
+            "id": "fetch_users",
+            "name": "Fetch Users from API",
+            "type": "http",
+            "config": {
+                "method": "GET",
+                "url": "https://api.example.com/users?limit=100",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Accept": "application/json"
+                },
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "validate_users",
+            "name": "Validate User Data",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/users/validate",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{{steps.fetch_users.response.body}}",
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "save_users",
+            "name": "Save Valid Users to Database",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "INSERT INTO users (user_id, username, email, created_at) SELECT user_id, username, email, NOW() FROM json_populate_recordset(null::users, $1::json) ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username, email = EXCLUDED.email, updated_at = NOW()",
+                "parameters": [
+                    "{{steps.validate_users.response.body.valid_users}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 60
+            }
+        },
+        {
+            "id": "get_user_count",
+            "name": "Get Total User Count",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "SELECT COUNT(*) as total_users, COUNT(CASE WHEN created_at::date = CURRENT_DATE THEN 1 END) as new_today FROM users",
+                "parameters": [],
+                "query_type": "raw_sql",
+                "timeout_seconds": 10
+            }
+        },
+        {
+            "id": "send_summary",
+            "name": "Send Summary Notification",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/notifications",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"message\": \"User sync completed\", \"total_users\": {{steps.get_user_count.output.rows[0].total_users}}, \"new_today\": {{steps.get_user_count.output.rows[0].new_today}}, \"execution_id\": \"{{execution_id}}\"}",
+                "timeout_seconds": 10
+            }
+        }
+    ],
+    "timeout_seconds": 300,
+    "max_retries": 3,
+    "allow_concurrent": false,
+    "enabled": true,
+    "notes": {
+        "description": "Ví dụ đơn giản về multi-step job với HTTP và Database operations",
+        "step_references": {
+            "http_response": "{{steps.fetch_users.response.body}}",
+            "database_output": "{{steps.get_user_count.output.rows[0].total_users}}",
+            "system_variables": "{{execution_id}}, {{execution_date}}, {{job_id}}"
+        },
+        "best_practices": [
+            "Sử dụng variables cho credentials: ${API_TOKEN}, ${DB_CONNECTION_STRING}",
+            "Reference step outputs: {{steps.step_id.response.body}}",
+            "Handle errors với max_retries và timeout_seconds",
+            "Use parameterized queries để prevent SQL injection"
+        ]
+    }
+}

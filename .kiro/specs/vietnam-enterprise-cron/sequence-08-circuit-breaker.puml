@@ -1,0 +1,387 @@
+@startuml Circuit Breaker Pattern
+
+title Circuit Breaker Pattern - Preventing Cascading Failures
+
+participant "Worker Process" as Worker
+participant "Circuit Breaker" as CB
+participant "Failure Tracker" as Tracker
+participant "External API" as API
+participant "Metrics" as Metrics
+participant "Alert System" as Alert
+
+== Initial State: Circuit CLOSED ==
+
+note over CB
+  **Circuit State: CLOSED**
+  
+  Normal operation
+  All requests pass through
+  Tracking failure rate
+end note
+
+== Successful Request ==
+
+Worker -> CB: Execute HTTP request to api.example.com
+activate Worker
+activate CB
+
+CB -> CB: Check circuit state: CLOSED
+
+CB -> Tracker: Record request attempt
+activate Tracker
+Tracker --> CB: Recorded
+deactivate Tracker
+
+CB -> API: Forward request
+activate API
+API --> CB: 200 OK (Success)
+deactivate API
+
+CB -> Tracker: Record success
+activate Tracker
+Tracker -> Tracker: Update metrics:\n- Total requests: 100\n- Successful: 95\n- Failed: 5\n- Failure rate: 5%
+Tracker --> CB: Success recorded
+deactivate Tracker
+
+CB --> Worker: Success response
+deactivate CB
+deactivate Worker
+
+== Failed Requests Start ==
+
+loop Multiple failed requests
+  Worker -> CB: Execute HTTP request
+  activate Worker
+  activate CB
+  
+  CB -> CB: Check circuit state: CLOSED
+  
+  CB -> Tracker: Record request attempt
+  activate Tracker
+  Tracker --> CB: Recorded
+  deactivate Tracker
+  
+  CB -> API: Forward request
+  activate API
+  API --> CB: 500 Internal Server Error
+  deactivate API
+  
+  CB -> Tracker: Record failure
+  activate Tracker
+  
+  Tracker -> Tracker: Update metrics:\n- Total requests: 110\n- Successful: 95\n- Failed: 15\n- Failure rate: 13.6%
+  
+  Tracker -> Tracker: Check failure threshold:\n- Threshold: 50% failure rate\n- OR 5 consecutive failures
+  
+  alt Failure threshold NOT exceeded
+    Tracker --> CB: Failure recorded (threshold not exceeded)
+    deactivate Tracker
+    
+    CB --> Worker: Error response (pass through)
+    deactivate CB
+    deactivate Worker
+    
+  else Failure threshold EXCEEDED
+    Tracker --> CB: Failure threshold exceeded!\n- Failure rate: 52%\n- Consecutive failures: 5
+    deactivate Tracker
+    
+    CB -> CB: **OPEN CIRCUIT**
+    
+    CB -> CB: Set state: OPEN\nSet timeout: 30 seconds
+    
+    CB -> Metrics: Increment circuit_breaker_opened_total{target="api.example.com"}
+    
+    CB -> Alert: Trigger alert:\n"Circuit breaker opened for api.example.com"
+    activate Alert
+    Alert -> Alert: Send notification to DevOps team
+    deactivate Alert
+    
+    CB --> Worker: Error response
+    deactivate CB
+    deactivate Worker
+    
+    note over CB
+      **Circuit State: OPEN**
+      
+      All requests will fail fast
+      No calls to external API
+      Wait for timeout (30 seconds)
+    end note
+  end
+end
+
+== Circuit OPEN: Fail Fast ==
+
+Worker -> CB: Execute HTTP request
+activate Worker
+activate CB
+
+CB -> CB: Check circuit state: OPEN
+
+CB -> CB: Check if timeout elapsed:\nOpened at: 10:00:00\nCurrent time: 10:00:15\nTimeout: 30 seconds\nElapsed: 15 seconds
+
+alt Timeout NOT elapsed
+  CB -> Metrics: Increment circuit_breaker_rejected_total{target="api.example.com"}
+  
+  CB --> Worker: Error: Circuit breaker is OPEN\n(fail fast, no API call)
+  deactivate CB
+  deactivate Worker
+  
+  note over Worker
+    Request fails immediately
+    No delay waiting for external API
+    Saves resources and time
+  end note
+  
+else Timeout elapsed (30 seconds passed)
+  CB -> CB: Transition to HALF-OPEN state
+  
+  note over CB
+    **Circuit State: HALF-OPEN**
+    
+    Testing if external system recovered
+    Allow limited requests through
+    If success: close circuit
+    If failure: reopen circuit
+  end note
+  
+  CB -> Tracker: Reset failure counter
+  activate Tracker
+  Tracker --> CB: Reset
+  deactivate Tracker
+  
+  CB -> Metrics: Set circuit_breaker_state{target="api.example.com"} = 0.5
+  
+  CB -> API: Forward request (test call)
+  activate API
+  
+  alt Test call successful
+    API --> CB: 200 OK (Success!)
+    deactivate API
+    
+    CB -> CB: **CLOSE CIRCUIT**
+    
+    CB -> CB: Set state: CLOSED
+    
+    CB -> Tracker: Record success
+    activate Tracker
+    Tracker --> CB: Success recorded
+    deactivate Tracker
+    
+    CB -> Metrics: Set circuit_breaker_state{target="api.example.com"} = 0
+    CB -> Metrics: Increment circuit_breaker_closed_total{target="api.example.com"}
+    
+    CB -> Alert: Send notification:\n"Circuit breaker closed for api.example.com - System recovered"
+    activate Alert
+    Alert -> Alert: Send recovery notification
+    deactivate Alert
+    
+    CB --> Worker: Success response
+    deactivate CB
+    deactivate Worker
+    
+    note over CB
+      **Circuit State: CLOSED**
+      
+      System recovered!
+      Normal operation resumed
+    end note
+    
+  else Test call failed
+    API --> CB: 500 Internal Server Error
+    deactivate API
+    
+    CB -> CB: **REOPEN CIRCUIT**
+    
+    CB -> CB: Set state: OPEN\nSet timeout: 60 seconds (doubled)
+    
+    CB -> Tracker: Record failure
+    activate Tracker
+    Tracker --> CB: Failure recorded
+    deactivate Tracker
+    
+    CB -> Metrics: Set circuit_breaker_state{target="api.example.com"} = 1
+    CB -> Metrics: Increment circuit_breaker_reopened_total{target="api.example.com"}
+    
+    CB -> Alert: Send notification:\n"Circuit breaker reopened for api.example.com - System still failing"
+    activate Alert
+    Alert -> Alert: Send alert (escalate)
+    deactivate Alert
+    
+    CB --> Worker: Error response
+    deactivate CB
+    deactivate Worker
+    
+    note over CB
+      **Circuit State: OPEN (again)**
+      
+      System still failing
+      Timeout doubled to 60 seconds
+      Will retry later
+    end note
+  end
+end
+
+== Configuration ==
+
+note over CB
+  **Circuit Breaker Configuration:**
+  
+  ```rust
+  CircuitBreakerConfig {
+    // Failure threshold
+    failure_rate_threshold: 0.5,  // 50%
+    consecutive_failures_threshold: 5,
+    
+    // Time window for failure rate calculation
+    window_size: 100,  // Last 100 requests
+    
+    // Timeout before transitioning to HALF-OPEN
+    timeout_duration: Duration::from_secs(30),
+    
+    // Timeout multiplier on reopen
+    timeout_multiplier: 2.0,
+    
+    // Max timeout
+    max_timeout: Duration::from_secs(300),  // 5 minutes
+    
+    // Number of test requests in HALF-OPEN state
+    half_open_max_calls: 3,
+  }
+  ```
+  
+  **Per-Target Configuration:**
+  - Each external system has its own circuit breaker
+  - api.example.com: separate circuit
+  - db.example.com: separate circuit
+  - Independent failure tracking
+end note
+
+== State Diagram ==
+
+note over CB
+  **Circuit Breaker State Machine:**
+  
+  ```
+  ┌─────────┐
+  │ CLOSED  │ ◄──────────────────┐
+  │ (Normal)│                    │
+  └────┬────┘                    │
+       │                         │
+       │ Failure threshold       │ Test call
+       │ exceeded                │ succeeds
+       │                         │
+       ▼                         │
+  ┌─────────┐                    │
+  │  OPEN   │                    │
+  │(Failing)│                    │
+  └────┬────┘                    │
+       │                         │
+       │ Timeout                 │
+       │ elapsed                 │
+       │                         │
+       ▼                         │
+  ┌──────────┐                   │
+  │HALF-OPEN │───────────────────┘
+  │ (Testing)│
+  └──────────┘
+       │
+       │ Test call
+       │ fails
+       │
+       ▼
+  ┌─────────┐
+  │  OPEN   │
+  │(Reopen) │
+  └─────────┘
+  ```
+end note
+
+== Metrics and Monitoring ==
+
+note over Metrics
+  **Prometheus Metrics:**
+  
+  # Circuit breaker state (0=closed, 0.5=half-open, 1=open)
+  circuit_breaker_state{target="api.example.com"} 0
+  
+  # Total times circuit opened
+  circuit_breaker_opened_total{target="api.example.com"} 5
+  
+  # Total times circuit closed (recovered)
+  circuit_breaker_closed_total{target="api.example.com"} 4
+  
+  # Total times circuit reopened
+  circuit_breaker_reopened_total{target="api.example.com"} 1
+  
+  # Total requests rejected (fail fast)
+  circuit_breaker_rejected_total{target="api.example.com"} 1523
+  
+  # Current failure rate
+  circuit_breaker_failure_rate{target="api.example.com"} 0.52
+  
+  # Consecutive failures
+  circuit_breaker_consecutive_failures{target="api.example.com"} 5
+end note
+
+== Benefits ==
+
+note over Worker, Alert
+  **Benefits of Circuit Breaker:**
+  
+  ✓ **Prevent Cascading Failures**
+    - Stop calling failing systems
+    - Prevent resource exhaustion
+    - Protect downstream services
+  
+  ✓ **Fast Failure**
+    - Fail immediately when circuit open
+    - No waiting for timeouts
+    - Better user experience
+  
+  ✓ **Automatic Recovery**
+    - Test system periodically
+    - Automatically resume when recovered
+    - No manual intervention needed
+  
+  ✓ **Resource Conservation**
+    - Don't waste threads/connections
+    - Free up resources for other work
+    - Improve overall system stability
+  
+  ✓ **Observability**
+    - Clear metrics on system health
+    - Alerts when systems fail
+    - Track recovery patterns
+  
+  **Use Cases:**
+  - External API calls
+  - Database connections
+  - Third-party services
+  - Microservice communication
+end note
+
+== Integration with Retry Logic ==
+
+note over Worker, CB
+  **Circuit Breaker + Retry Logic:**
+  
+  1. Worker attempts job execution
+  2. Circuit breaker checks state
+  3. If OPEN: Fail fast (no retry)
+  4. If CLOSED: Execute request
+  5. If request fails:
+     - Circuit breaker records failure
+     - Retry logic schedules retry
+  6. On retry:
+     - Circuit breaker may be OPEN
+     - Fail fast (don't retry)
+     - Move to Dead Letter Queue faster
+  
+  **Benefit:**
+  - Don't waste retries on failing systems
+  - Faster detection of systemic failures
+  - Better resource utilization
+end note
+
+@enduml

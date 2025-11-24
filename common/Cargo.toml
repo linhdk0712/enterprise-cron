@@ -1,0 +1,62 @@
+[package]
+name = "common"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "common"
+path = "src/lib.rs"
+
+[dependencies]
+# Workspace dependencies
+tokio.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+config.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+cron.workspace = true
+uuid.workspace = true
+jsonwebtoken.workspace = true
+bcrypt.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+hex = "0.4"
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+sqlx.workspace = true
+redis.workspace = true
+regex.workspace = true
+async-nats.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+mysql_async.workspace = true
+oracle.workspace = true
+axum.workspace = true
+rust-s3.workspace = true
+calamine.workspace = true
+rust_xlsxwriter.workspace = true
+csv.workspace = true
+ssh2.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile = "3.23"
+futures.workspace = true
+wiremock = "0.6"
+base64 = "0.22"
+testcontainers = "0.17"
+tower = "0.4"

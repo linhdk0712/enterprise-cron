@@ -1,0 +1,44 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "vietnam-cron.fullname" . }}-scheduler
+  labels:
+    {{- include "vietnam-cron.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "vietnam-cron.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scheduler
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "vietnam-cron.fullname" . }}-worker
+  labels:
+    {{- include "vietnam-cron.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "vietnam-cron.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "vietnam-cron.fullname" . }}-api
+  labels:
+    {{- include "vietnam-cron.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "vietnam-cron.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+{{- end }}

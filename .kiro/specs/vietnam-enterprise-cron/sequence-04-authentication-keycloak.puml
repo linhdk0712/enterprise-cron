@@ -1,0 +1,203 @@
+@startuml Authentication Flow - Keycloak Mode
+
+title Authentication & Authorization - Keycloak Mode
+
+actor "Admin User" as User
+participant "Browser" as Browser
+participant "API Server\n(Axum)" as API
+participant "JWT Middleware" as JWT
+participant "RBAC Middleware" as RBAC
+participant "Keycloak Server" as Keycloak
+participant "Redis Cache" as Cache
+participant "PostgreSQL\n(System DB)" as DB
+participant "Audit Logger" as Audit
+
+== Initial Login (External to System) ==
+
+User -> Browser: Navigate to dashboard
+Browser -> Keycloak: Redirect to Keycloak login page
+activate Keycloak
+
+User -> Keycloak: Enter username/password
+Keycloak -> Keycloak: Validate credentials
+Keycloak -> Keycloak: Generate JWT token with claims:\n{\n  "sub": "user-123",\n  "username": "admin",\n  "email": "admin@example.com",\n  "realm_access": {\n    "roles": ["admin", "job-manager"]\n  },\n  "resource_access": {\n    "cron-system": {\n      "roles": ["job:read", "job:write", "job:execute"]\n    }\n  },\n  "exp": 1737369600,\n  "iat": 1737283200\n}
+
+Keycloak --> Browser: JWT token
+deactivate Keycloak
+Browser -> Browser: Store token in localStorage
+
+== API Request with JWT Token ==
+
+User -> Browser: Click "Create Job"
+Browser -> API: POST /api/jobs\nAuthorization: Bearer {jwt_token}\nBody: {job_config}
+activate API
+
+== JWT Validation ==
+
+API -> JWT: Validate JWT token
+activate JWT
+
+JWT -> JWT: Extract token from Authorization header
+
+JWT -> JWT: Decode JWT header and payload
+
+JWT -> Cache: GET keycloak:public_keys
+activate Cache
+
+alt Public keys cached
+  Cache --> JWT: Cached public keys (TTL: 1 hour)
+  deactivate Cache
+  
+else Public keys not cached or expired
+  Cache --> JWT: Cache miss
+  deactivate Cache
+  
+  JWT -> Keycloak: GET /realms/{realm}/protocol/openid-connect/certs
+  activate Keycloak
+  
+  alt Keycloak available
+    Keycloak --> JWT: Public keys (JWKS)
+    deactivate Keycloak
+    
+    JWT -> Cache: SET keycloak:public_keys {keys} EX 3600
+    activate Cache
+    Cache --> JWT: Cached
+    deactivate Cache
+    
+  else Keycloak unavailable
+    Keycloak --> JWT: Connection timeout or error
+    deactivate Keycloak
+    
+    JWT -> Cache: GET keycloak:public_keys (use stale cache)
+    activate Cache
+    Cache --> JWT: Stale public keys (fallback)
+    deactivate Cache
+    
+    JWT -> Audit: Log warning: "Keycloak unavailable, using cached keys"
+    
+    note over JWT
+      **Resilience Mechanism:**
+      System continues to operate with cached keys
+      even if Keycloak is temporarily down
+    end note
+  end
+end
+
+JWT -> JWT: Verify JWT signature using public key
+
+alt Signature valid
+  JWT -> JWT: Check expiration (exp claim)
+  
+  alt Token not expired
+    JWT -> JWT: Check issuer (iss claim)
+    
+    alt Issuer valid
+      JWT -> JWT: Extract user claims:\n- sub (user ID)\n- username\n- email\n- roles/permissions
+      
+      JWT --> API: Valid token\nUser claims: {sub, username, permissions}
+      deactivate JWT
+      
+    else Issuer invalid
+      JWT --> API: 401 Unauthorized\n{error: "Invalid token issuer"}
+      deactivate JWT
+      API --> Browser: 401 Unauthorized
+      deactivate API
+      Browser -> User: Show error: "Authentication failed"
+    end
+    
+  else Token expired
+    JWT --> API: 401 Unauthorized\n{error: "Token expired"}
+    deactivate JWT
+    API --> Browser: 401 Unauthorized
+    deactivate API
+    Browser -> User: Redirect to login
+  end
+  
+else Signature invalid
+  JWT --> API: 401 Unauthorized\n{error: "Invalid token signature"}
+  deactivate JWT
+  API --> Browser: 401 Unauthorized
+  deactivate API
+  Browser -> User: Show error: "Authentication failed"
+end
+
+== RBAC Permission Check ==
+
+API -> RBAC: Check permission: "job:write"
+activate RBAC
+
+RBAC -> RBAC: Extract permissions from JWT claims:\nresource_access.cron-system.roles:\n["job:read", "job:write", "job:execute"]
+
+RBAC -> RBAC: Check if "job:write" in permissions
+
+alt Permission granted
+  RBAC --> API: Permission granted
+  deactivate RBAC
+  
+  == Execute Business Logic ==
+  
+  API -> API: Validate job configuration
+  
+  API -> DB: INSERT INTO jobs\n(id, name, schedule_config, job_config, ...)\nVALUES (...)
+  activate DB
+  DB --> API: Job created (job_id: uuid)
+  deactivate DB
+  
+  == Audit Logging ==
+  
+  API -> Audit: Log operation:\n{\n  "timestamp": "2025-01-20T10:30:00Z",\n  "user_id": "user-123",\n  "username": "admin",\n  "operation": "create_job",\n  "resource_type": "job",\n  "resource_id": "job-uuid",\n  "result": "success",\n  "ip_address": "192.168.1.100"\n}
+  
+  API --> Browser: 201 Created\n{job_id, message: "Job created successfully"}
+  deactivate API
+  
+  Browser -> User: Show success message
+  
+else Permission denied
+  RBAC --> API: 403 Forbidden\n{error: "Insufficient permissions"}
+  deactivate RBAC
+  
+  API -> Audit: Log failed operation:\n{\n  "user_id": "user-123",\n  "operation": "create_job",\n  "result": "forbidden",\n  "reason": "Missing job:write permission"\n}
+  
+  API --> Browser: 403 Forbidden\n{error: "You don't have permission to create jobs"}
+  deactivate API
+  
+  Browser -> User: Show error: "Access denied"
+end
+
+== Token Refresh (When Token Expires) ==
+
+note over User, Keycloak
+  **Token Refresh Flow:**
+  
+  1. Frontend detects token expiration (exp claim)
+  2. Redirect user to Keycloak
+  3. Keycloak checks session (SSO)
+  4. If session valid: Issue new token automatically
+  5. If session expired: Prompt for login
+  6. Return new token to frontend
+  
+  This provides seamless user experience with SSO
+end note
+
+== Permission Matrix ==
+
+note over RBAC
+  **Permission Mapping:**
+  
+  job:read → View jobs, view job details
+  job:write → Create jobs, update jobs, enable/disable jobs
+  job:execute → Manually trigger jobs
+  job:delete → Delete jobs
+  execution:read → View execution history
+  variable:read → View variables
+  variable:write → Create/update/delete variables
+  user:admin → Manage users and roles (database mode only)
+  
+  Roles in Keycloak:
+  - admin: All permissions
+  - job-manager: job:*, execution:read, variable:*
+  - job-viewer: job:read, execution:read
+  - operator: job:read, job:execute, execution:read
+end note
+
+@enduml

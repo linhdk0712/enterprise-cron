@@ -1,0 +1,282 @@
+# Vietnam Enterprise Cron System - Docker Compose Configuration
+# Requirements: 9.2
+
+services:
+  # PostgreSQL - System Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: vietnam-cron-postgres
+    environment:
+      POSTGRES_DB: vietnam_cron
+      POSTGRES_USER: cronuser
+      POSTGRES_PASSWORD: cronpass
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cronuser -d vietnam_cron"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cron-network
+    restart: unless-stopped
+
+  # Redis - Distributed Locking and Rate Limiting
+  redis:
+    image: redis:7-alpine
+    container_name: vietnam-cron-redis
+    command: redis-server --appendonly yes --requirepass redispass
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - cron-network
+    restart: unless-stopped
+
+  # NATS JetStream - Job Queue
+  nats:
+    image: nats:2.10-alpine
+    container_name: vietnam-cron-nats
+    command: 
+      - "--jetstream"
+      - "--store_dir=/data"
+      - "--http_port=8222"
+    ports:
+      - "4222:4222"  # Client connections
+      - "8222:8222"  # HTTP monitoring
+      - "6222:6222"  # Cluster connections
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - cron-network
+    restart: unless-stopped
+
+  # MinIO - Object Storage for Job Definitions and Context
+  minio:
+    image: minio/minio:latest
+    container_name: vietnam-cron-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - cron-network
+    restart: unless-stopped
+
+  # Scheduler Service
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vietnam-cron:latest
+    container_name: vietnam-cron-scheduler
+    command: scheduler
+    environment:
+      RUST_LOG: info
+      APP__DATABASE__URL: postgresql://cronuser:cronpass@postgres:5432/vietnam_cron
+      APP__REDIS__URL: redis://:redispass@redis:6379
+      APP__NATS__URL: nats://nats:4222
+      APP__SCHEDULER__POLL_INTERVAL_SECONDS: 10
+      APP__SCHEDULER__LOCK_TTL_SECONDS: 30
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - cron-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  # Worker Service
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vietnam-cron:latest
+    command: worker
+    environment:
+      RUST_LOG: info
+      APP__DATABASE__URL: postgresql://cronuser:cronpass@postgres:5432/vietnam_cron
+      APP__REDIS__URL: redis://:redispass@redis:6379
+      APP__NATS__URL: nats://nats:4222
+      APP__MINIO__ENDPOINT: minio:9000
+      APP__MINIO__ACCESS_KEY: minioadmin
+      APP__MINIO__SECRET_KEY: minioadmin
+      APP__MINIO__BUCKET: vietnam-cron
+      APP__MINIO__REGION: us-east-1
+      APP__WORKER__CONCURRENCY: 10
+      APP__WORKER__MAX_RETRIES: 10
+      APP__WORKER__TIMEOUT_SECONDS: 300
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - cron-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+      replicas: 2  # Run 2 worker instances
+
+  # API Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vietnam-cron:latest
+    container_name: vietnam-cron-api
+    command: api
+    environment:
+      RUST_LOG: info
+      APP__SERVER__HOST: 0.0.0.0
+      APP__SERVER__PORT: 8080
+      APP__DATABASE__URL: postgresql://cronuser:cronpass@postgres:5432/vietnam_cron
+      APP__REDIS__URL: redis://:redispass@redis:6379
+      APP__NATS__URL: nats://nats:4222
+      APP__MINIO__ENDPOINT: minio:9000
+      APP__MINIO__ACCESS_KEY: minioadmin
+      APP__MINIO__SECRET_KEY: minioadmin
+      APP__MINIO__BUCKET: vietnam-cron
+      APP__MINIO__REGION: us-east-1
+      APP__AUTH__MODE: database
+      APP__AUTH__JWT_SECRET: change-this-secret-in-production
+      APP__AUTH__JWT_EXPIRY_HOURS: 24
+      APP__OBSERVABILITY__LOG_LEVEL: info
+      APP__OBSERVABILITY__METRICS_PORT: 9090
+    ports:
+      - "8080:8080"  # API and Dashboard
+      - "9090:9090"  # Prometheus metrics
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - cron-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # Prometheus - Metrics Collection (Optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: vietnam-cron-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - cron-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana - Metrics Visualization (Optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: vietnam-cron-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - cron-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+networks:
+  cron-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  nats_data:
+    driver: local
+  minio_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

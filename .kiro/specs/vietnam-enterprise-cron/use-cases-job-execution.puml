@@ -1,0 +1,305 @@
+@startuml Job Execution Use Cases - Detailed
+
+title Job Execution - Detailed Use Cases
+
+actor "Scheduler Process" as Scheduler
+actor "Worker Process" as Worker
+actor "External HTTP API" as ExternalAPI
+actor "Target Database" as TargetDB
+
+rectangle "Job Execution Subsystem" {
+  
+  usecase "Schedule Job for Execution" as UC1 {
+    --
+    **Scheduler Flow:**
+    1. Detect job is due
+    2. Acquire distributed lock
+    3. Generate idempotency key
+    4. Create JobExecution record
+    5. Publish to NATS queue
+    6. Release lock
+    --
+    **Validates:** Req 4.1, 4.4
+  }
+  
+  usecase "Consume Job from Queue" as UC2 {
+    --
+    **Worker Flow:**
+    1. Subscribe to NATS stream
+    2. Receive job message
+    3. Check idempotency key
+    4. Process if not duplicate
+    5. Acknowledge message
+    --
+    **Validates:** Req 4.2, 4.3
+  }
+  
+  usecase "Execute HTTP Request Job" as UC3 {
+    --
+    **HTTP Executor Flow:**
+    1. Resolve variables in URL/headers/body
+    2. Apply authentication
+    3. Send HTTP request (GET/POST/PUT)
+    4. Capture response
+    5. Record result
+    --
+    **Validates:** Req 3.1-3.6
+  }
+  
+  usecase "Apply Basic Auth" as UC3_1 {
+    --
+    Add Authorization header:
+    Basic base64(username:password)
+    --
+    **Validates:** Req 3.4
+  }
+  
+  usecase "Apply Bearer Token" as UC3_2 {
+    --
+    Add Authorization header:
+    Bearer <token>
+    --
+    **Validates:** Req 3.5
+  }
+  
+  usecase "Apply OAuth2 Auth" as UC3_3 {
+    --
+    1. Obtain access token
+    2. Add Authorization header
+    3. Handle token refresh
+    --
+    **Validates:** Req 3.6
+  }
+  
+  usecase "Execute Database Query Job" as UC4 {
+    --
+    **Database Executor Flow:**
+    1. Resolve variables in connection/query
+    2. Connect to target database
+    3. Execute SQL or stored procedure
+    4. Capture result set
+    5. Record result
+    --
+    **Validates:** Req 3.7-3.10
+  }
+  
+  usecase "Connect to Oracle 19c" as UC4_1 {
+    --
+    Use Oracle-compatible driver
+    Execute query on Oracle DB
+    --
+    **Validates:** Req 3.8
+  }
+  
+  usecase "Connect to PostgreSQL" as UC4_2 {
+    --
+    Use PostgreSQL driver
+    Execute query on PostgreSQL
+    --
+    **Validates:** Req 3.9
+  }
+  
+  usecase "Connect to MySQL" as UC4_3 {
+    --
+    Use MySQL driver
+    Execute query on MySQL
+    --
+    **Validates:** Req 3.10
+  }
+  
+  usecase "Resolve Variables" as UC5 {
+    --
+    **Variable Resolution:**
+    1. Load global variables
+    2. Load job-specific variables
+    3. Apply precedence (job > global)
+    4. Substitute placeholders
+    5. Use parameterized queries for SQL
+    --
+    **Validates:** Req 2.3, 2.4, 2.9-2.12
+  }
+  
+  usecase "Handle Execution Failure" as UC6 {
+    --
+    **Failure Handling:**
+    1. Log error with context
+    2. Check retry count
+    3. Calculate backoff delay
+    4. Requeue or move to DLQ
+    --
+    **Validates:** Req 4.5, 4.6, 4.8
+  }
+  
+  usecase "Retry with Exponential Backoff" as UC6_1 {
+    --
+    **Retry Sequence:**
+    Attempt 1: 5s + jitter
+    Attempt 2: 15s + jitter
+    Attempt 3: 1m + jitter
+    Attempt 4: 5m + jitter
+    Attempt 5: 30m + jitter
+    ...up to 10 attempts
+    --
+    **Validates:** Req 4.5, 4.6
+  }
+  
+  usecase "Move to Dead Letter Queue" as UC6_2 {
+    --
+    After 10 failed attempts:
+    1. Mark status as DeadLetter
+    2. Store in DLQ
+    3. Prevent auto-retry
+    4. Require manual intervention
+    --
+    **Validates:** Req 4.8, 4.10
+  }
+  
+  usecase "Handle Timeout" as UC7 {
+    --
+    **Timeout Handling:**
+    1. Monitor execution duration
+    2. Terminate if exceeds timeout
+    3. Mark as Timeout status
+    4. Log timeout event
+    --
+    **Validates:** Req 4.9
+  }
+  
+  usecase "Activate Circuit Breaker" as UC8 {
+    --
+    **Circuit Breaker States:**
+    - Closed: Normal operation
+    - Open: Fail fast (after N failures)
+    - Half-Open: Test recovery
+    --
+    **Validates:** Req 4.7
+  }
+  
+  usecase "Ensure Exactly-Once Execution" as UC9 {
+    --
+    **Idempotency Mechanism:**
+    1. Check idempotency key in DB
+    2. Skip if already executed
+    3. Use Redis lock for atomicity
+    4. NATS acknowledgment
+    --
+    **Validates:** Req 4.2, 4.3
+  }
+  
+  usecase "Record Execution Result" as UC10 {
+    --
+    **Record in System Database:**
+    - Execution ID
+    - Status (Success/Failed/Timeout)
+    - Start/completion time
+    - Result or error message
+    - Attempt number
+    --
+    **Validates:** Req 3.12, 5.1, 5.2
+  }
+  
+  usecase "Emit Metrics and Logs" as UC11 {
+    --
+    **Observability:**
+    - Structured logs (JSON)
+    - Prometheus counters/histograms
+    - OpenTelemetry traces
+    - Alert triggers
+    --
+    **Validates:** Req 5.1-5.9
+  }
+}
+
+' Scheduler relationships
+Scheduler --> UC1
+
+' Worker relationships
+Worker --> UC2
+Worker --> UC3
+Worker --> UC4
+Worker --> UC5
+Worker --> UC6
+Worker --> UC7
+Worker --> UC8
+Worker --> UC9
+Worker --> UC10
+Worker --> UC11
+
+' External system relationships
+UC3 --> ExternalAPI : <<invokes>>
+UC4 --> TargetDB : <<queries>>
+
+' Include/Extend relationships
+UC1 ..> UC9 : <<include>>
+
+UC2 ..> UC9 : <<include>>
+UC2 ..> UC3 : <<extend>>
+UC2 ..> UC4 : <<extend>>
+
+UC3 ..> UC5 : <<include>>
+UC3 ..> UC3_1 : <<extend>>
+UC3 ..> UC3_2 : <<extend>>
+UC3 ..> UC3_3 : <<extend>>
+UC3 ..> UC6 : <<extend>>
+UC3 ..> UC7 : <<extend>>
+UC3 ..> UC8 : <<extend>>
+UC3 ..> UC10 : <<include>>
+UC3 ..> UC11 : <<include>>
+
+UC4 ..> UC5 : <<include>>
+UC4 ..> UC4_1 : <<extend>>
+UC4 ..> UC4_2 : <<extend>>
+UC4 ..> UC4_3 : <<extend>>
+UC4 ..> UC6 : <<extend>>
+UC4 ..> UC7 : <<extend>>
+UC4 ..> UC8 : <<extend>>
+UC4 ..> UC10 : <<include>>
+UC4 ..> UC11 : <<include>>
+
+UC6 ..> UC6_1 : <<include>>
+UC6 ..> UC6_2 : <<extend>>
+
+' Notes
+note right of UC1
+  **Distributed Lock:**
+  - Redis RedLock algorithm
+  - 3+ Redis nodes
+  - Lock TTL: 30 seconds
+  - Prevents duplicate scheduling
+end note
+
+note right of UC9
+  **Exactly-Once Guarantee:**
+  1. Distributed lock (Redis)
+  2. Idempotency key (UUID)
+  3. Database constraint (unique key)
+  4. NATS acknowledgment
+end note
+
+note right of UC5
+  **Variable Substitution:**
+  - Global variables
+  - Job-specific variables
+  - Precedence: job > global
+  - SQL injection prevention
+    via parameterized queries
+end note
+
+note bottom of UC6_1
+  **Exponential Backoff:**
+  Base delays with random jitter
+  to prevent thundering herd
+  
+  Max retries: 10
+  After 10 failures → DLQ
+end note
+
+note bottom of UC8
+  **Circuit Breaker:**
+  Prevents cascading failures
+  when external systems are down
+  
+  Fail fast to save resources
+end note
+
+@enduml

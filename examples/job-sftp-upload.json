@@ -1,0 +1,93 @@
+{
+    "name": "Generate and Upload Daily Report via SFTP",
+    "description": "Tạo báo cáo hàng ngày từ database và upload lên SFTP server",
+    "schedule": {
+        "type": "cron",
+        "expression": "0 0 22 * * *",
+        "timezone": "Asia/Ho_Chi_Minh"
+    },
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": null
+    },
+    "steps": [
+        {
+            "id": "fetch_daily_data",
+            "name": "Fetch Daily Sales Data",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "SELECT product_id, product_name, SUM(quantity) as total_quantity, SUM(amount) as total_amount, COUNT(*) as order_count FROM sales WHERE DATE(created_at) = CURRENT_DATE GROUP BY product_id, product_name ORDER BY total_amount DESC",
+                "parameters": [],
+                "query_type": "raw_sql",
+                "timeout_seconds": 60
+            }
+        },
+        {
+            "id": "generate_excel_report",
+            "name": "Generate Excel Report",
+            "type": "file_processing",
+            "config": {
+                "operation": "write",
+                "format": "excel",
+                "destination_path": "reports/daily_sales_{{execution_date}}.xlsx",
+                "data_source": "{{steps.fetch_daily_data.output.rows}}",
+                "options": {
+                    "sheet_name": "Daily Sales",
+                    "transformations": []
+                }
+            }
+        },
+        {
+            "id": "upload_to_sftp",
+            "name": "Upload Report to SFTP Server",
+            "type": "sftp",
+            "config": {
+                "operation": "upload",
+                "host": "sftp.partner.example.com",
+                "port": 22,
+                "auth": {
+                    "type": "ssh_key",
+                    "username": "${SFTP_USERNAME}",
+                    "private_key_path": "/secrets/sftp_private_key"
+                },
+                "local_path": "{{steps.generate_excel_report.output.files[0].path}}",
+                "remote_path": "/incoming/reports/",
+                "options": {
+                    "create_directories": true,
+                    "verify_host_key": true,
+                    "recursive": false
+                },
+                "timeout_seconds": 180
+            }
+        },
+        {
+            "id": "log_upload_success",
+            "name": "Log Upload Success",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "INSERT INTO report_uploads (report_date, filename, remote_path, file_size, uploaded_at) VALUES (CURRENT_DATE, $1, $2, $3, NOW())",
+                "parameters": [
+                    "{{steps.generate_excel_report.output.files[0].filename}}",
+                    "{{steps.upload_to_sftp.output.remote_path}}",
+                    "{{steps.generate_excel_report.output.files[0].size}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 10
+            }
+        }
+    ],
+    "timeout_seconds": 600,
+    "max_retries": 3,
+    "allow_concurrent": false,
+    "enabled": true,
+    "notes": {
+        "description": "This job demonstrates database query, Excel generation, and SFTP upload with SSH key authentication",
+        "ssh_key_setup": "Mount SSH private key as a Kubernetes secret or Docker volume at /secrets/sftp_private_key",
+        "remote_path_behavior": "If remote_path ends with '/', the filename from local_path is appended automatically"
+    }
+}

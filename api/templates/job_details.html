@@ -1,0 +1,188 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ job.name }} - Vietnam Enterprise Cron{% endblock %}
+
+{% block content %}
+<div class="card" sse-swap="job_status_changed" hx-get="/dashboard/jobs/{{ job.id }}"
+    hx-trigger="sse:job_status_changed[detail.job_id=='{{ job.id }}']">
+    <div class="card-header">
+        <div>
+            <h2>{{ job.name }}</h2>
+            {% if job.description %}
+            <p style="color: #7f8c8d; margin-top: 0.5rem;">{{ job.description }}</p>
+            {% endif %}
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary btn-sm" onclick="exportJob('{{ job.id }}', '{{ job.name }}')">
+                📤 Export
+            </button>
+            {% if job.enabled %}
+            <button class="btn btn-secondary btn-sm" hx-put="/api/jobs/{{ job.id }}/disable"
+                hx-confirm="Disable job '{{ job.name }}'?" hx-swap="none">
+                Disable
+            </button>
+            {% else %}
+            <button class="btn btn-success btn-sm" hx-put="/api/jobs/{{ job.id }}/enable"
+                hx-confirm="Enable job '{{ job.name }}'?" hx-swap="none">
+                Enable
+            </button>
+            {% endif %}
+            <button class="btn btn-primary btn-sm" hx-post="/api/jobs/{{ job.id }}/trigger"
+                hx-confirm="Trigger job '{{ job.name }}' now?" hx-swap="none">
+                ▶ Trigger Now
+            </button>
+            <button class="btn btn-danger btn-sm" hx-delete="/api/jobs/{{ job.id }}"
+                hx-confirm="Delete job '{{ job.name }}'? This cannot be undone." hx-target="body"
+                hx-push-url="/dashboard/jobs">
+                Delete
+            </button>
+        </div>
+    </div>
+
+    <div
+        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+        <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px;">
+            <div style="color: #7f8c8d; font-size: 0.85rem; margin-bottom: 0.25rem;">Status</div>
+            <div style="font-size: 1.25rem; font-weight: 600;">
+                {% if job.enabled %}
+                <span class="badge badge-success">Enabled</span>
+                {% else %}
+                <span class="badge badge-secondary">Disabled</span>
+                {% endif %}
+            </div>
+        </div>
+        <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px;">
+            <div style="color: #7f8c8d; font-size: 0.85rem; margin-bottom: 0.25rem;">Total Executions</div>
+            <div style="font-size: 1.25rem; font-weight: 600;">{{ job.total_executions | default(value=0) }}</div>
+        </div>
+        <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px;">
+            <div style="color: #7f8c8d; font-size: 0.85rem; margin-bottom: 0.25rem;">Success Rate</div>
+            <div style="font-size: 1.25rem; font-weight: 600;">
+                {% if job.total_executions > 0 %}
+                {% set success_rate = (job.successful_executions / job.total_executions * 100) | round(1) %}
+                {{ success_rate }}%
+                {% else %}
+                N/A
+                {% endif %}
+            </div>
+        </div>
+        <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px;">
+            <div style="color: #7f8c8d; font-size: 0.85rem; margin-bottom: 0.25rem;">Last Execution</div>
+            <div style="font-size: 1.25rem; font-weight: 600;">
+                {% if job.last_execution_at %}
+                {{ job.last_execution_at }}
+                {% else %}
+                Never
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <h3 style="margin-bottom: 1rem;">Configuration</h3>
+    <table>
+        <tr>
+            <th style="width: 200px;">Job ID</th>
+            <td><code>{{ job.id }}</code></td>
+        </tr>
+        <tr>
+            <th>Schedule Type</th>
+            <td>
+                {% if job.schedule_type %}
+                {{ job.schedule_type }}
+                {% else %}
+                Manual Only
+                {% endif %}
+            </td>
+        </tr>
+        {% if job.schedule_config %}
+        <tr>
+            <th>Schedule Config</th>
+            <td>
+                <pre style="margin: 0; font-size: 0.9rem;">{{ job.schedule_config | tojson(pretty=true) }}</pre>
+            </td>
+        </tr>
+        {% endif %}
+        <tr>
+            <th>Timeout</th>
+            <td>{{ job.timeout_seconds }} seconds</td>
+        </tr>
+        <tr>
+            <th>Max Retries</th>
+            <td>{{ job.max_retries }}</td>
+        </tr>
+        <tr>
+            <th>Allow Concurrent</th>
+            <td>{{ job.allow_concurrent }}</td>
+        </tr>
+        <tr>
+            <th>Created At</th>
+            <td>{{ job.created_at }}</td>
+        </tr>
+        <tr>
+            <th>Updated At</th>
+            <td>{{ job.updated_at }}</td>
+        </tr>
+    </table>
+
+    {% if job.steps %}
+    <h3 style="margin: 2rem 0 1rem 0;">Job Steps</h3>
+    <div style="display: flex; flex-direction: column; gap: 1rem;">
+        {% for step in job.steps %}
+        <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px; border-left: 4px solid #3498db;">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">Step {{ loop.index }}: {{ step.name }}</div>
+            <div style="color: #7f8c8d; font-size: 0.9rem;">Type: {{ step.step_type }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Recent Executions</h2>
+    </div>
+    <div hx-get="/dashboard/executions?job_id={{ job.id }}&limit=10" hx-trigger="load"
+        hx-indicator="#executions-loading">
+        <div id="executions-loading" class="htmx-indicator" style="text-align: center; padding: 2rem;">
+            <span class="spinner"></span> Loading executions...
+        </div>
+    </div>
+</div>
+
+<script>
+    async function exportJob(jobId, jobName) {
+        try {
+            const response = await fetch('/api/jobs/export', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ job_id: jobId })
+            });
+
+            if (!response.ok) {
+                throw new Error('Export failed');
+            }
+
+            const result = await response.json();
+            const exportData = result.data;
+
+            // Create a blob and download
+            const blob = new Blob([JSON.stringify(exportData.job, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = exportData.filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            alert('Job exported successfully!');
+        } catch (error) {
+            alert('Failed to export job: ' + error.message);
+        }
+    }
+</script>
+
+{% endblock %}

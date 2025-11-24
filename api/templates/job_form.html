@@ -1,0 +1,1107 @@
+{% extends "layout.html" %}
+
+{% block title %}Create Job - Vietnam Enterprise Cron{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .wizard {
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+    }
+
+    .wizard-steps {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        position: relative;
+    }
+
+    .wizard-steps::before {
+        content: '';
+        position: absolute;
+        top: 20px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: #ecf0f1;
+        z-index: 0;
+    }
+
+    .wizard-step {
+        flex: 1;
+        text-align: center;
+        position: relative;
+        z-index: 1;
+    }
+
+    .wizard-step-circle {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #ecf0f1;
+        color: #7f8c8d;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 0.5rem;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .wizard-step.active .wizard-step-circle {
+        background: #3498db;
+        color: white;
+    }
+
+    .wizard-step.completed .wizard-step-circle {
+        background: #27ae60;
+        color: white;
+    }
+
+    .wizard-step-label {
+        font-size: 0.9rem;
+        color: #7f8c8d;
+    }
+
+    .wizard-step.active .wizard-step-label {
+        color: #2c3e50;
+        font-weight: 600;
+    }
+
+    .wizard-content {
+        display: none;
+    }
+
+    .wizard-content.active {
+        display: block;
+    }
+
+    .wizard-actions {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 2rem;
+        padding-top: 2rem;
+        border-top: 2px solid #ecf0f1;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .step-item {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 4px;
+        border-left: 4px solid #3498db;
+        margin-bottom: 1rem;
+    }
+
+    .step-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+
+    .json-preview {
+        background: #2c3e50;
+        color: #ecf0f1;
+        padding: 1rem;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+
+    .error-message {
+        color: #e74c3c;
+        font-size: 0.9rem;
+        margin-top: 0.25rem;
+    }
+
+    .r adio-group {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .radio-option {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .hidden {
+        display: none !important;
+    }
+
+    @media (max-width: 768px) {
+        .wizard-steps {
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .wizard-steps::before {
+            display: none;
+        }
+
+        .form-row {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>Create New Job</h2>
+        <button class="btn btn-secondary" onclick="window.history.back()">
+            ← Back
+        </button>
+    </div>
+
+    <form id="job-form" class="wizard">
+        <!-- Wizard Steps -->
+        <div class="wizard-steps">
+            <div class="wizard-step active" data-step="1">
+                <div class="wizard-step-circle">1</div>
+                <div class="wizard-step-label">Basic Info</div>
+            </div>
+            <div class="wizard-step" data-step="2">
+                <div class="wizard-step-circle">2</div>
+                <div class="wizard-step-label">Schedule</div>
+            </div>
+            <div class="wizard-step" data-step="3">
+                <div class="wizard-step-circle">3</div>
+                <div class="wizard-step-label">Job Steps</div>
+            </div>
+            <div class="wizard-step" data-step="4">
+                <div class="wizard-step-circle">4</div>
+                <div class="wizard-step-label">Triggers</div>
+            </div>
+            <div class="wizard-step" data-step="5">
+                <div class="wizard-step-circle">5</div>
+                <div class="wizard-step-label">Review</div>
+            </div>
+        </div>
+
+        <!-- Step 1: Basic Info -->
+        <div class="wizard-content active" data-step="1">
+            <h3>Basic Information</h3>
+            <div class="form-group">
+                <label for="job-name">Job Name *</label>
+                <input type="text" id="job-name" name="name" required placeholder="e.g., Daily Sales Report">
+                <span class="error-message" id="error-name"></span>
+            </div>
+            <div class="form-group">
+                <label for="job-description">Description</label>
+                <textarea id="job-description" name="description" rows="3"
+                    placeholder="Describe what this job does"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="timeout-seconds">Timeout (seconds) *</label>
+                    <input type="number" id="timeout-seconds" name="timeout_seconds" value="300" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="max-retries">Max Retries *</label>
+                    <input type="number" id="max-retries" name="max_retries" value="10" min="0" max="10" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="allow-concurrent" name="allow_concurrent">
+                    Allow concurrent executions
+                </label>
+            </div>
+        </div>
+
+        <!-- Step 2: Schedule -->
+        <div class="wizard-content" data-step="2">
+            <h3>Schedule Configuration</h3>
+            <div class="form-group">
+                <label>Schedule Type *</label>
+                <div class="radio-group">
+                    <div class="radio-option">
+                        <input type="radio" id="schedule-none" name="schedule_type" value="none" checked>
+                        <label for="schedule-none">Manual Only</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="schedule-cron" name="schedule_type" value="cron">
+                        <label for="schedule-cron">Cron Expression</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="schedule-fixed-delay" name="schedule_type" value="fixed_delay">
+                        <label for="schedule-fixed-delay">Fixed Delay</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="schedule-fixed-rate" name="schedule_type" value="fixed_rate">
+                        <label for="schedule-fixed-rate">Fixed Rate</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="schedule-one-time" name="schedule_type" value="one_time">
+                        <label for="schedule-one-time">One Time</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cron Schedule -->
+            <div id="cron-config" class="hidden">
+                <div class="form-group">
+                    <label for="cron-expression">Cron Expression *</label>
+                    <input type="text" id="cron-expression" placeholder="0 0 0 * * ? *">
+                    <small style="color: #7f8c8d;">Quartz syntax with second precision. Example: 0 0 0 * * ? * (daily at
+                        midnight)</small>
+                    <span class="error-message" id="error-cron-expression"></span>
+                </div>
+                <div class="form-group">
+                    <label for="cron-timezone">Timezone</label>
+                    <input type="text" id="cron-timezone" value="Asia/Ho_Chi_Minh" placeholder="Asia/Ho_Chi_Minh">
+                </div>
+                <div class="form-group">
+                    <label for="cron-end-date">End Date (optional)</label>
+                    <input type="datetime-local" id="cron-end-date">
+                </div>
+            </div>
+
+            <!-- Fixed Delay Schedule -->
+            <div id="fixed-delay-config" class="hidden">
+                <div class="form-group">
+                    <label for="delay-seconds">Delay (seconds) *</label>
+                    <input type="number" id="delay-seconds" min="1" placeholder="3600">
+                    <small style="color: #7f8c8d;">Time to wait after previous execution completes</small>
+                </div>
+            </div>
+
+            <!-- Fixed Rate Schedule -->
+            <div id="fixed-rate-config" class="hidden">
+                <div class="form-group">
+                    <label for="interval-seconds">Interval (seconds) *</label>
+                    <input type="number" id="interval-seconds" min="1" placeholder="3600">
+                    <small style="color: #7f8c8d;">Fixed interval between execution starts</small>
+                </div>
+            </div>
+
+            <!-- One Time Schedule -->
+            <div id="one-time-config" class="hidden">
+                <div class="form-group">
+                    <label for="execute-at">Execute At *</label>
+                    <input type="datetime-local" id="execute-at">
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Job Steps -->
+        <div class="wizard-content" data-step="3">
+            <h3>Job Steps</h3>
+            <p style="color: #7f8c8d; margin-bottom: 1rem;">
+                Define the steps that will be executed sequentially. Each step can perform different operations.
+            </p>
+            <div id="steps-container"></div>
+            <button type="button" class="btn btn-primary" onclick="addStep()">
+                + Add Step
+            </button>
+        </div>
+
+        <!-- Step 4: Triggers -->
+        <div class="wizard-content" data-step="4">
+            <h3>Trigger Configuration</h3>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="trigger-scheduled" name="trigger_scheduled" checked>
+                    Scheduled Trigger (based on schedule configuration)
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="trigger-manual" name="trigger_manual" checked>
+                    Manual Trigger (via dashboard or API)
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="trigger-webhook" name="trigger_webhook">
+                    Webhook Trigger
+                </label>
+            </div>
+            <div id="webhook-config" class="hidden">
+                <div class="form-group">
+                    <label for="webhook-secret">Webhook Secret Key *</label>
+                    <input type="text" id="webhook-secret"
+                        placeholder="Enter a secret key for HMAC signature validation">
+                    <small style="color: #7f8c8d;">Used for HMAC-SHA256 signature validation</small>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="webhook-rate-limit-max">Rate Limit - Max Requests</label>
+                        <input type="number" id="webhook-rate-limit-max" min="1" placeholder="100">
+                    </div>
+                    <div class="form-group">
+                        <label for="webhook-rate-limit-window">Rate Limit - Window (seconds)</label>
+                        <input type="number" id="webhook-rate-limit-window" min="1" placeholder="60">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5: Review -->
+        <div class="wizard-content" data-step="5">
+            <h3>Review & Submit</h3>
+            <p style="color: #7f8c8d; margin-bottom: 1rem;">
+                Review the generated JSON job definition before submitting.
+            </p>
+            <div class="json-preview" id="json-preview"></div>
+            <div id="validation-errors" class="alert alert-error hidden" style="margin-top: 1rem;"></div>
+        </div>
+
+        <!-- Wizard Actions -->
+        <div class="wizard-actions">
+            <button type="button" class="btn btn-secondary" id="btn-prev" onclick="previousStep()"
+                style="display: none;">
+                ← Previous
+            </button>
+            <div></div>
+            <button type="button" class="btn btn-primary" id="btn-next" onclick="nextStep()">
+                Next →
+            </button>
+            <button type="submit" class="btn btn-success" id="btn-submit" style="display: none;">
+                Create Job
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    let currentStep = 1;
+    const totalSteps = 5;
+    let steps = [];
+
+    // Initialize form
+    document.addEventListener('DOMContentLoaded', function () {
+        // Schedule type change handlers
+        document.querySelectorAll('input[name="schedule_type"]').forEach(radio => {
+            radio.addEventListener('change', handleScheduleTypeChange);
+        });
+
+        // Webhook trigger change handler
+        document.getElementById('trigger-webhook').addEventListener('change', function () {
+            document.getElementById('webhook-config').classList.toggle('hidden', !this.checked);
+        });
+
+        // Form submission
+        document.getElementById('job-form').addEventListener('submit', handleSubmit);
+    });
+
+    function handleScheduleTypeChange(e) {
+        // Hide all schedule configs
+        document.getElementById('cron-config').classList.add('hidden');
+        document.getElementById('fixed-delay-config').classList.add('hidden');
+        document.getElementById('fixed-rate-config').classList.add('hidden');
+        document.getElementById('one-time-config').classList.add('hidden');
+
+        // Show selected config
+        const value = e.target.value;
+        if (value === 'cron') {
+            document.getElementById('cron-config').classList.remove('hidden');
+        } else if (value === 'fixed_delay') {
+            document.getElementById('fixed-delay-config').classList.remove('hidden');
+        } else if (value === 'fixed_rate') {
+            document.getElementById('fixed-rate-config').classList.remove('hidden');
+        } else if (value === 'one_time') {
+            document.getElementById('one-time-config').classList.remove('hidden');
+        }
+    }
+
+    function nextStep() {
+        if (!validateCurrentStep()) {
+            return;
+        }
+
+        if (currentStep < totalSteps) {
+            // Mark current step as completed
+            document.querySelector(`.wizard-step[data-step="${currentStep}"]`).classList.add('completed');
+            document.querySelector(`.wizard-step[data-step="${currentStep}"]`).classList.remove('active');
+            document.querySelector(`.wizard-content[data-step="${currentStep}"]`).classList.remove('active');
+
+            currentStep++;
+
+            // Activate next step
+            document.querySelector(`.wizard-step[data-step="${currentStep}"]`).classList.add('active');
+            document.querySelector(`.wizard-content[data-step="${currentStep}"]`).classList.add('active');
+
+            // Update buttons
+            document.getElementById('btn-prev').style.display = 'block';
+            if (currentStep === totalSteps) {
+                document.getElementById('btn-next').style.display = 'none';
+                document.getElementById('btn-submit').style.display = 'block';
+                updateJsonPreview();
+            }
+        }
+    }
+
+    function previousStep() {
+        if (currentStep > 1) {
+            document.querySelector(`.wizard-step[data-step="${currentStep}"]`).classList.remove('active');
+            document.querySelector(`.wizard-content[data-step="${currentStep}"]`).classList.remove('active');
+
+            currentStep--;
+
+            document.querySelector(`.wizard-step[data-step="${currentStep}"]`).classList.add('active');
+            document.querySelector(`.wizard-content[data-step="${currentStep}"]`).classList.add('active');
+
+            // Update buttons
+            if (currentStep === 1) {
+                document.getElementById('btn-prev').style.display = 'none';
+            }
+            document.getElementById('btn-next').style.display = 'block';
+            document.getElementById('btn-submit').style.display = 'none';
+        }
+    }
+
+    function validateCurrentStep() {
+        // Clear previous errors
+        document.querySelectorAll('.error-message').forEach(el => el.textContent = '');
+
+        if (currentStep === 1) {
+            const name = document.getElementById('job-name').value.trim();
+            if (!name) {
+                document.getElementById('error-name').textContent = 'Job name is required';
+                return false;
+            }
+        } else if (currentStep === 2) {
+            const scheduleType = document.querySelector('input[name="schedule_type"]:checked').value;
+            if (scheduleType === 'cron') {
+                const expression = document.getElementById('cron-expression').value.trim();
+                if (!expression) {
+                    document.getElementById('error-cron-expression').textContent = 'Cron expression is required';
+                    return false;
+                }
+            } else if (scheduleType === 'fixed_delay') {
+                const delay = document.getElementById('delay-seconds').value;
+                if (!delay || delay < 1) {
+                    alert('Delay seconds must be at least 1');
+                    return false;
+                }
+            } else if (scheduleType === 'fixed_rate') {
+                const interval = document.getElementById('interval-seconds').value;
+                if (!interval || interval < 1) {
+                    alert('Interval seconds must be at least 1');
+                    return false;
+                }
+            } else if (scheduleType === 'one_time') {
+                const executeAt = document.getElementById('execute-at').value;
+                if (!executeAt) {
+                    alert('Execute at time is required');
+                    return false;
+                }
+            }
+        } else if (currentStep === 3) {
+            if (steps.length === 0) {
+                alert('At least one job step is required');
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function addStep() {
+        const stepId = `step-${steps.length + 1}`;
+        const stepNumber = steps.length + 1;
+
+        const stepHtml = `
+        <div class="step-item" id="${stepId}">
+            <div class="step-item-header">
+                <strong>Step ${stepNumber}</strong>
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeStep('${stepId}')">Remove</button>
+            </div>
+            <div class="form-group">
+                <label>Step Name *</label>
+                <input type="text" class="step-name" placeholder="e.g., Fetch data from API" required>
+            </div>
+            <div class="form-group">
+                <label>Step Type *</label>
+                <select class="step-type" onchange="handleStepTypeChange('${stepId}', this.value)">
+                    <option value="">Select type...</option>
+                    <option value="http_request">HTTP Request</option>
+                    <option value="database_query">Database Query</option>
+                    <option value="file_processing">File Processing</option>
+                    <option value="sftp">SFTP</option>
+                </select>
+            </div>
+            <div class="step-config" id="${stepId}-config"></div>
+        </div>
+    `;
+
+        document.getElementById('steps-container').insertAdjacentHTML('beforeend', stepHtml);
+        steps.push({ id: stepId, number: stepNumber });
+    }
+
+    function removeStep(stepId) {
+        document.getElementById(stepId).remove();
+        steps = steps.filter(s => s.id !== stepId);
+        // Renumber remaining steps
+        steps.forEach((step, index) => {
+            step.number = index + 1;
+            const element = document.getElementById(step.id);
+            element.querySelector('.step-item-header strong').textContent = `Step ${step.number}`;
+        });
+    }
+
+    function handleStepTypeChange(stepId, type) {
+        const configDiv = document.getElementById(`${stepId}-config`);
+        configDiv.innerHTML = '';
+
+        if (type === 'http_request') {
+            configDiv.innerHTML = `
+            <div class="form-group">
+                <label>HTTP Method *</label>
+                <select class="http-method">
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>URL *</label>
+                <input type="text" class="http-url" placeholder="https://api.example.com/endpoint">
+            </div>
+            <div class="form-group">
+                <label>Headers (JSON)</label>
+                <textarea class="http-headers" rows="3" placeholder='{"Content-Type": "application/json"}'></textarea>
+            </div>
+            <div class="form-group">
+                <label>Body (JSON)</label>
+                <textarea class="http-body" rows="3" placeholder='{"key": "value"}'></textarea>
+            </div>
+            <div class="form-group">
+                <label>Authentication</label>
+                <select class="http-auth-type" onchange="handleHttpAuthChange('${stepId}', this.value)">
+                    <option value="">None</option>
+                    <option value="basic">Basic</option>
+                    <option value="bearer">Bearer Token</option>
+                    <option value="oauth2">OAuth2</option>
+                </select>
+            </div>
+            <div class="http-auth-config" id="${stepId}-http-auth"></div>
+        `;
+        } else if (type === 'database_query') {
+            configDiv.innerHTML = `
+            <div class="form-group">
+                <label>Database Type *</label>
+                <select class="db-type">
+                    <option value="postgresql">PostgreSQL</option>
+                    <option value="mysql">MySQL</option>
+                    <option value="oracle">Oracle</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Connection String *</label>
+                <input type="text" class="db-connection" placeholder="postgresql://user:pass@host:5432/db">
+            </div>
+            <div class="form-group">
+                <label>Query Type *</label>
+                <select class="db-query-type" onchange="handleDbQueryTypeChange('${stepId}', this.value)">
+                    <option value="raw_sql">Raw SQL</option>
+                    <option value="stored_procedure">Stored Procedure</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>SQL Query *</label>
+                <textarea class="db-query" rows="4" placeholder="SELECT * FROM users WHERE id = $1"></textarea>
+            </div>
+            <div class="db-sp-config hidden" id="${stepId}-db-sp">
+                <div class="form-group">
+                    <label>Procedure Name *</label>
+                    <input type="text" class="db-sp-name" placeholder="get_user_data">
+                </div>
+                <div class="form-group">
+                    <label>Parameters (comma-separated)</label>
+                    <input type="text" class="db-sp-params" placeholder="param1, param2">
+                </div>
+            </div>
+        `;
+        } else if (type === 'file_processing') {
+            configDiv.innerHTML = `
+            <div class="form-group">
+                <label>Operation *</label>
+                <select class="file-operation">
+                    <option value="read">Read</option>
+                    <option value="write">Write</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>File Format *</label>
+                <select class="file-format" onchange="handleFileFormatChange('${stepId}', this.value)">
+                    <option value="excel">Excel (XLSX)</option>
+                    <option value="csv">CSV</option>
+                </select>
+            </div>
+            <div class="csv-delimiter hidden" id="${stepId}-csv-delimiter">
+                <div class="form-group">
+                    <label>CSV Delimiter</label>
+                    <select class="csv-delimiter-char">
+                        <option value=",">Comma (,)</option>
+                        <option value=";">Semicolon (;)</option>
+                        <option value="\\t">Tab</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Source Path</label>
+                <input type="text" class="file-source" placeholder="jobs/{job_id}/input/data.xlsx">
+            </div>
+            <div class="form-group">
+                <label>Destination Path</label>
+                <input type="text" class="file-destination" placeholder="jobs/{job_id}/output/result.xlsx">
+            </div>
+            <div class="form-group">
+                <label>Sheet Name (Excel only)</label>
+                <input type="text" class="file-sheet-name" placeholder="Sheet1">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" class="file-streaming">
+                    Use streaming for large files (>100MB)
+                </label>
+            </div>
+        `;
+        } else if (type === 'sftp') {
+            configDiv.innerHTML = `
+            <div class="form-group">
+                <label>Operation *</label>
+                <select class="sftp-operation">
+                    <option value="download">Download</option>
+                    <option value="upload">Upload</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Host *</label>
+                <input type="text" class="sftp-host" placeholder="sftp.example.com">
+            </div>
+            <div class="form-group">
+                <label>Port *</label>
+                <input type="number" class="sftp-port" value="22" min="1" max="65535">
+            </div>
+            <div class="form-group">
+                <label>Authentication Type *</label>
+                <select class="sftp-auth-type" onchange="handleSftpAuthChange('${stepId}', this.value)">
+                    <option value="password">Password</option>
+                    <option value="ssh_key">SSH Key</option>
+                </select>
+            </div>
+            <div class="sftp-auth-config" id="${stepId}-sftp-auth">
+                <div class="form-group">
+                    <label>Username *</label>
+                    <input type="text" class="sftp-username" placeholder="username">
+                </div>
+                <div class="form-group">
+                    <label>Password *</label>
+                    <input type="password" class="sftp-password" placeholder="password">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Remote Path *</label>
+                <input type="text" class="sftp-remote-path" placeholder="/path/to/file.csv">
+            </div>
+            <div class="form-group">
+                <label>Local Path (MinIO)</label>
+                <input type="text" class="sftp-local-path" placeholder="jobs/{job_id}/files/data.csv">
+            </div>
+            <div class="form-group">
+                <label>Wildcard Pattern</label>
+                <input type="text" class="sftp-wildcard" placeholder="*.csv">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" class="sftp-recursive">
+                    Recursive (for directories)
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" class="sftp-create-dirs" checked>
+                    Create remote directories if needed
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" class="sftp-verify-host" checked>
+                    Verify host key
+                </label>
+            </div>
+        `;
+        }
+    }
+
+    function handleHttpAuthChange(stepId, authType) {
+        const authDiv = document.getElementById(`${stepId}-http-auth`);
+        if (authType === 'basic') {
+            authDiv.innerHTML = `
+            <div class="form-group">
+                <label>Username *</label>
+                <input type="text" class="http-auth-username">
+            </div>
+            <div class="form-group">
+                <label>Password *</label>
+                <input type="password" class="http-auth-password">
+            </div>
+        `;
+        } else if (authType === 'bearer') {
+            authDiv.innerHTML = `
+            <div class="form-group">
+                <label>Token *</label>
+                <input type="text" class="http-auth-token">
+            </div>
+        `;
+        } else if (authType === 'oauth2') {
+            authDiv.innerHTML = `
+            <div class="form-group">
+                <label>Client ID *</label>
+                <input type="text" class="http-auth-client-id">
+            </div>
+            <div class="form-group">
+                <label>Client Secret *</label>
+                <input type="password" class="http-auth-client-secret">
+            </div>
+            <div class="form-group">
+                <label>Token URL *</label>
+                <input type="text" class="http-auth-token-url" placeholder="https://auth.example.com/token">
+            </div>
+        `;
+        } else {
+            authDiv.innerHTML = '';
+        }
+    }
+
+    function handleDbQueryTypeChange(stepId, queryType) {
+        const spConfig = document.getElementById(`${stepId}-db-sp`);
+        if (queryType === 'stored_procedure') {
+            spConfig.classList.remove('hidden');
+        } else {
+            spConfig.classList.add('hidden');
+        }
+    }
+
+    function handleFileFormatChange(stepId, format) {
+        const csvDelimiter = document.getElementById(`${stepId}-csv-delimiter`);
+        if (format === 'csv') {
+            csvDelimiter.classList.remove('hidden');
+        } else {
+            csvDelimiter.classList.add('hidden');
+        }
+    }
+
+    function handleSftpAuthChange(stepId, authType) {
+        const authDiv = document.getElementById(`${stepId}-sftp-auth`);
+        if (authType === 'password') {
+            authDiv.innerHTML = `
+            <div class="form-group">
+                <label>Username *</label>
+                <input type="text" class="sftp-username" placeholder="username">
+            </div>
+            <div class="form-group">
+                <label>Password *</label>
+                <input type="password" class="sftp-password" placeholder="password">
+            </div>
+        `;
+        } else if (authType === 'ssh_key') {
+            authDiv.innerHTML = `
+            <div class="form-group">
+                <label>Username *</label>
+                <input type="text" class="sftp-username" placeholder="username">
+            </div>
+            <div class="form-group">
+                <label>Private Key Path *</label>
+                <input type="text" class="sftp-key-path" placeholder="/path/to/private_key">
+            </div>
+        `;
+        }
+    }
+
+    function buildJobDefinition() {
+        const jobDef = {
+            name: document.getElementById('job-name').value.trim(),
+            description: document.getElementById('job-description').value.trim() || null,
+            timeout_seconds: parseInt(document.getElementById('timeout-seconds').value),
+            max_retries: parseInt(document.getElementById('max-retries').value),
+            allow_concurrent: document.getElementById('allow-concurrent').checked,
+            schedule: null,
+            steps: [],
+            triggers: {
+                scheduled: document.getElementById('trigger-scheduled').checked,
+                manual: document.getElementById('trigger-manual').checked,
+                webhook: null
+            }
+        };
+
+        // Build schedule
+        const scheduleType = document.querySelector('input[name="schedule_type"]:checked').value;
+        if (scheduleType !== 'none') {
+            if (scheduleType === 'cron') {
+                jobDef.schedule = {
+                    type: 'cron',
+                    expression: document.getElementById('cron-expression').value.trim(),
+                    timezone: document.getElementById('cron-timezone').value.trim() || 'Asia/Ho_Chi_Minh',
+                    end_date: document.getElementById('cron-end-date').value || null
+                };
+            } else if (scheduleType === 'fixed_delay') {
+                jobDef.schedule = {
+                    type: 'fixed_delay',
+                    delay_seconds: parseInt(document.getElementById('delay-seconds').value)
+                };
+            } else if (scheduleType === 'fixed_rate') {
+                jobDef.schedule = {
+                    type: 'fixed_rate',
+                    interval_seconds: parseInt(document.getElementById('interval-seconds').value)
+                };
+            } else if (scheduleType === 'one_time') {
+                jobDef.schedule = {
+                    type: 'one_time',
+                    execute_at: document.getElementById('execute-at').value
+                };
+            }
+        }
+
+        // Build steps
+        steps.forEach((step, index) => {
+            const stepEl = document.getElementById(step.id);
+            const stepName = stepEl.querySelector('.step-name').value.trim();
+            const stepType = stepEl.querySelector('.step-type').value;
+
+            if (!stepName || !stepType) return;
+
+            const stepDef = {
+                id: `step${index + 1}`,
+                name: stepName,
+                type: null,
+                condition: null
+            };
+
+            if (stepType === 'http_request') {
+                const method = stepEl.querySelector('.http-method').value;
+                const url = stepEl.querySelector('.http-url').value.trim();
+                const headersText = stepEl.querySelector('.http-headers').value.trim();
+                const bodyText = stepEl.querySelector('.http-body').value.trim();
+                const authType = stepEl.querySelector('.http-auth-type').value;
+
+                let headers = {};
+                if (headersText) {
+                    try {
+                        headers = JSON.parse(headersText);
+                    } catch (e) {
+                        console.error('Invalid headers JSON:', e);
+                    }
+                }
+
+                let auth = null;
+                if (authType === 'basic') {
+                    auth = {
+                        type: 'basic',
+                        username: stepEl.querySelector('.http-auth-username').value,
+                        password: stepEl.querySelector('.http-auth-password').value
+                    };
+                } else if (authType === 'bearer') {
+                    auth = {
+                        type: 'bearer',
+                        token: stepEl.querySelector('.http-auth-token').value
+                    };
+                } else if (authType === 'oauth2') {
+                    auth = {
+                        type: 'oauth2',
+                        client_id: stepEl.querySelector('.http-auth-client-id').value,
+                        client_secret: stepEl.querySelector('.http-auth-client-secret').value,
+                        token_url: stepEl.querySelector('.http-auth-token-url').value
+                    };
+                }
+
+                stepDef.type = {
+                    type: 'http_request',
+                    method: method,
+                    url: url,
+                    headers: headers,
+                    body: bodyText || null,
+                    auth: auth
+                };
+            } else if (stepType === 'database_query') {
+                const dbType = stepEl.querySelector('.db-type').value;
+                const connection = stepEl.querySelector('.db-connection').value.trim();
+                const query = stepEl.querySelector('.db-query').value.trim();
+                const queryType = stepEl.querySelector('.db-query-type').value;
+
+                let queryTypeObj = { type: 'raw_sql' };
+                if (queryType === 'stored_procedure') {
+                    const spName = stepEl.querySelector('.db-sp-name').value.trim();
+                    const spParams = stepEl.querySelector('.db-sp-params').value.trim();
+                    queryTypeObj = {
+                        type: 'stored_procedure',
+                        procedure_name: spName,
+                        parameters: spParams ? spParams.split(',').map(p => p.trim()) : []
+                    };
+                }
+
+                stepDef.type = {
+                    type: 'database_query',
+                    database_type: dbType,
+                    connection_string: connection,
+                    query: query,
+                    query_type: queryTypeObj
+                };
+            } else if (stepType === 'file_processing') {
+                const operation = stepEl.querySelector('.file-operation').value;
+                const format = stepEl.querySelector('.file-format').value;
+                const source = stepEl.querySelector('.file-source').value.trim();
+                const destination = stepEl.querySelector('.file-destination').value.trim();
+                const sheetName = stepEl.querySelector('.file-sheet-name').value.trim();
+                const streaming = stepEl.querySelector('.file-streaming').checked;
+
+                let formatObj = { type: 'excel' };
+                if (format === 'csv') {
+                    const delimiter = stepEl.querySelector('.csv-delimiter-char').value;
+                    formatObj = {
+                        type: 'csv',
+                        delimiter: delimiter === '\\t' ? '\t' : delimiter
+                    };
+                }
+
+                stepDef.type = {
+                    type: 'file_processing',
+                    operation: operation,
+                    format: formatObj,
+                    source_path: source || null,
+                    destination_path: destination || null,
+                    options: {
+                        sheet_name: sheetName || null,
+                        sheet_index: null,
+                        transformations: [],
+                        streaming: streaming
+                    }
+                };
+            }
+            else if (stepType === 'sftp') {
+                const operation = stepEl.querySelector('.sftp-operation').value;
+                const host = stepEl.querySelector('.sftp-host').value.trim();
+                const port = parseInt(stepEl.querySelector('.sftp-port').value);
+                const authType = stepEl.querySelector('.sftp-auth-type').value;
+                const remotePath = stepEl.querySelector('.sftp-remote-path').value.trim();
+                const localPath = stepEl.querySelector('.sftp-local-path').value.trim();
+                const wildcard = stepEl.querySelector('.sftp-wildcard').value.trim();
+                const recursive = stepEl.querySelector('.sftp-recursive').checked;
+                const createDirs = stepEl.querySelector('.sftp-create-dirs').checked;
+                const verifyHost = stepEl.querySelector('.sftp-verify-host').checked;
+
+                let auth = null;
+                if (authType === 'password') {
+                    auth = {
+                        type: 'password',
+                        username: stepEl.querySelector('.sftp-username').value,
+                        password: stepEl.querySelector('.sftp-password').value
+                    };
+                } else if (authType === 'ssh_key') {
+                    auth = {
+                        type: 'ssh_key',
+                        username: stepEl.querySelector('.sftp-username').value,
+                        private_key_path: stepEl.querySelector('.sftp-key-path').value
+                    };
+                }
+
+                stepDef.type = {
+                    type: 'sftp',
+                    operation: operation,
+                    host: host,
+                    port: port,
+                    auth: auth,
+                    remote_path: remotePath,
+                    local_path: localPath || null,
+                    options: {
+                        wildcard_pattern: wildcard || null,
+                        recursive: recursive,
+                        create_directories: createDirs,
+                        verify_host_key: verifyHost
+                    }
+                };
+            }
+
+            jobDef.steps.push(stepDef);
+        });
+
+        // Build webhook config
+        if (document.getElementById('trigger-webhook').checked) {
+            const secret = document.getElementById('webhook-secret').value.trim();
+            const maxRequests = document.getElementById('webhook-rate-limit-max').value;
+            const windowSeconds = document.getElementById('webhook-rate-limit-window').value;
+
+            jobDef.triggers.webhook = {
+                enabled: true,
+                url: '', // Will be generated by backend
+                secret_key: secret,
+                rate_limit: (maxRequests && windowSeconds) ? {
+                    max_requests: parseInt(maxRequests),
+                    window_seconds: parseInt(windowSeconds)
+                } : null
+            };
+        }
+
+        return jobDef;
+    }
+
+    function updateJsonPreview() {
+        const jobDef = buildJobDefinition();
+        const jsonStr = JSON.stringify(jobDef, null, 2);
+        document.getElementById('json-preview').textContent = jsonStr;
+    }
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+
+        const jobDef = buildJobDefinition();
+
+        // Client-side validation
+        const errors = [];
+        if (!jobDef.name) {
+            errors.push('Job name is required');
+        }
+        if (jobDef.steps.length === 0) {
+            errors.push('At least one job step is required');
+        }
+
+        if (errors.length > 0) {
+            const errorDiv = document.getElementById('validation-errors');
+            errorDiv.innerHTML = errors.map(e => `<div>• ${e}</div>`).join('');
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/jobs', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(jobDef)
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                alert('Job created successfully!');
+                window.location.href = `/dashboard/jobs/${result.data}`;
+            } else {
+                const errorDiv = document.getElementById('validation-errors');
+                errorDiv.innerHTML = `<div>Error: ${result.error || 'Failed to create job'}</div>`;
+                errorDiv.classList.remove('hidden');
+            }
+        } catch (error) {
+            const errorDiv = document.getElementById('validation-errors');
+            errorDiv.innerHTML = `<div>Error: ${error.message}</div>`;
+            errorDiv.classList.remove('hidden');
+        }
+    }
+</script>
+{% endblock %}

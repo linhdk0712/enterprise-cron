@@ -1,0 +1,220 @@
+{
+    "name": "Advanced Webhook Handler - E-commerce Order Processing",
+    "description": "Xử lý webhook từ payment gateway, validate, update database, và trigger fulfillment",
+    "schedule": null,
+    "triggers": {
+        "scheduled": false,
+        "manual": true,
+        "webhook": {
+            "enabled": true,
+            "secret_key": "ecommerce-webhook-secret-key-2025",
+            "rate_limit": {
+                "max_requests": 200,
+                "window_seconds": 60
+            }
+        }
+    },
+    "steps": [
+        {
+            "id": "log_webhook_receipt",
+            "name": "Log Webhook Receipt",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "INSERT INTO webhook_logs (webhook_id, job_id, execution_id, payload, headers, query_params, received_at) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, NOW()) RETURNING id",
+                "parameters": [
+                    "{{webhook.payload.webhook_id}}",
+                    "{{job_id}}",
+                    "{{execution_id}}",
+                    "{{webhook.payload}}",
+                    "{{webhook.headers}}",
+                    "{{webhook.query_params}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 10
+            }
+        },
+        {
+            "id": "validate_payment",
+            "name": "Validate Payment with Payment Gateway",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.payment-gateway.com/v1/payments/verify",
+                "headers": {
+                    "Authorization": "Bearer ${PAYMENT_GATEWAY_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"transaction_id\": \"{{webhook.payload.transaction_id}}\", \"amount\": {{webhook.payload.amount}}, \"currency\": \"{{webhook.payload.currency}}\"}",
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "get_order_details",
+            "name": "Get Order Details from Database",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "SELECT order_id, customer_id, customer_email, total_amount, status, items FROM orders WHERE order_id = $1",
+                "parameters": [
+                    "{{webhook.payload.order_id}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 10
+            }
+        },
+        {
+            "id": "update_order_status",
+            "name": "Update Order Status to Paid",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "UPDATE orders SET status = 'paid', payment_id = $1, payment_method = $2, paid_at = NOW(), updated_at = NOW() WHERE order_id = $3 RETURNING *",
+                "parameters": [
+                    "{{webhook.payload.transaction_id}}",
+                    "{{webhook.payload.payment_method}}",
+                    "{{webhook.payload.order_id}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 20
+            }
+        },
+        {
+            "id": "create_invoice",
+            "name": "Generate Invoice",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/invoices/generate",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"order_id\": \"{{webhook.payload.order_id}}\", \"customer_email\": \"{{steps.get_order_details.output.rows[0].customer_email}}\", \"amount\": {{webhook.payload.amount}}, \"transaction_id\": \"{{webhook.payload.transaction_id}}\", \"items\": {{steps.get_order_details.output.rows[0].items}}}",
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "trigger_fulfillment",
+            "name": "Trigger Order Fulfillment",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.warehouse.example.com/fulfillment/create",
+                "headers": {
+                    "Authorization": "Bearer ${WAREHOUSE_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"order_id\": \"{{webhook.payload.order_id}}\", \"customer_id\": {{steps.get_order_details.output.rows[0].customer_id}}, \"items\": {{steps.get_order_details.output.rows[0].items}}, \"priority\": \"{{webhook.query_params.priority}}\"}",
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "send_confirmation_email",
+            "name": "Send Payment Confirmation Email",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/emails/send",
+                "headers": {
+                    "Authorization": "Bearer ${EMAIL_API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"to\": \"{{steps.get_order_details.output.rows[0].customer_email}}\", \"template\": \"payment_confirmation\", \"data\": {\"order_id\": \"{{webhook.payload.order_id}}\", \"amount\": {{webhook.payload.amount}}, \"currency\": \"{{webhook.payload.currency}}\", \"transaction_id\": \"{{webhook.payload.transaction_id}}\", \"invoice_url\": \"{{steps.create_invoice.response.body.invoice_url}}\"}}",
+                "timeout_seconds": 15
+            }
+        },
+        {
+            "id": "send_slack_notification",
+            "name": "Send Slack Notification to Sales Team",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://hooks.slack.com/services/${SLACK_WEBHOOK_PATH}",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"channel\": \"#sales\", \"text\": \"💰 New Payment Received\", \"attachments\": [{\"color\": \"good\", \"fields\": [{\"title\": \"Order ID\", \"value\": \"{{webhook.payload.order_id}}\", \"short\": true}, {\"title\": \"Amount\", \"value\": \"{{webhook.payload.amount}} {{webhook.payload.currency}}\", \"short\": true}, {\"title\": \"Customer\", \"value\": \"{{steps.get_order_details.output.rows[0].customer_email}}\", \"short\": true}, {\"title\": \"Transaction ID\", \"value\": \"{{webhook.payload.transaction_id}}\", \"short\": true}]}]}",
+                "timeout_seconds": 10
+            }
+        },
+        {
+            "id": "update_webhook_log_success",
+            "name": "Update Webhook Log with Success",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "UPDATE webhook_logs SET status = 'success', processed_at = NOW(), result = $1::jsonb WHERE id = $2",
+                "parameters": [
+                    "{\"order_updated\": true, \"invoice_created\": true, \"fulfillment_triggered\": true, \"email_sent\": true}",
+                    "{{steps.log_webhook_receipt.output.rows[0].id}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 10
+            }
+        }
+    ],
+    "timeout_seconds": 180,
+    "max_retries": 3,
+    "allow_concurrent": true,
+    "enabled": true,
+    "notes": {
+        "description": "Advanced webhook handler demonstrating all webhook features",
+        "webhook_url": "https://your-domain.com/api/webhooks/{job_id}",
+        "webhook_signature": "HMAC-SHA256 in X-Webhook-Signature header",
+        "example_webhook_request": {
+            "url": "https://your-domain.com/api/webhooks/{job_id}?priority=high",
+            "method": "POST",
+            "headers": {
+                "Content-Type": "application/json",
+                "X-Webhook-Signature": "base64_encoded_hmac_sha256_signature",
+                "X-Request-ID": "unique-request-id"
+            },
+            "body": {
+                "webhook_id": "wh_123456789",
+                "event_type": "payment.success",
+                "order_id": "ORD-2025-001234",
+                "transaction_id": "TXN-987654321",
+                "amount": 2500000,
+                "currency": "VND",
+                "payment_method": "credit_card",
+                "timestamp": "2025-01-15T10:30:00Z"
+            }
+        },
+        "webhook_data_access": {
+            "payload_field": "{{webhook.payload.order_id}}",
+            "query_param": "{{webhook.query_params.priority}}",
+            "header": "{{webhook.headers.X-Request-ID}}"
+        },
+        "security_features": [
+            "HMAC-SHA256 signature validation",
+            "Rate limiting: 200 requests per minute",
+            "Webhook logging for audit trail",
+            "Disabled job rejection (403)",
+            "Invalid signature rejection (401)"
+        ],
+        "workflow_steps": [
+            "1. Log webhook receipt for audit",
+            "2. Validate payment with payment gateway",
+            "3. Get order details from database",
+            "4. Update order status to paid",
+            "5. Generate invoice",
+            "6. Trigger warehouse fulfillment",
+            "7. Send confirmation email to customer",
+            "8. Send Slack notification to sales team",
+            "9. Update webhook log with success"
+        ],
+        "best_practices": [
+            "Log all webhook receipts for debugging",
+            "Validate payment with external gateway",
+            "Use allow_concurrent=true for high-volume webhooks",
+            "Set appropriate rate limits",
+            "Send notifications to multiple channels",
+            "Update audit logs with processing results"
+        ]
+    }
+}

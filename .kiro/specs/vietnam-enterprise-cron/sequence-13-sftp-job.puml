@@ -1,0 +1,487 @@
+@startuml SFTP Job Execution
+
+title SFTP Job - Secure File Transfer (Download and Upload)
+
+actor "System Administrator" as Admin
+participant "Worker Process" as Worker
+participant "SFTP Executor" as SFTPExec
+participant "Job Context Manager" as ContextMgr
+participant "MinIO\n(Object Storage)" as MinIO
+participant "SFTP Server\n(Remote)" as SFTP
+participant "PostgreSQL\n(System DB)" as DB
+
+== Job Definition with SFTP Steps ==
+
+note over Admin, SFTP
+  **Job Definition:**
+  {
+    "name": "Daily Report Transfer",
+    "schedule": {"type": "Cron", "expression": "0 0 6 * * *"},
+    "steps": [
+      {
+        "id": "step1",
+        "name": "download-source-files",
+        "type": "SFTP",
+        "config": {
+          "operation": "download",
+          "host": "sftp.partner.com",
+          "port": 22,
+          "username": "{{sftp_user}}",
+          "auth_type": "password",
+          "password": "{{sftp_password}}",
+          "remote_path": "/incoming/reports/*.csv",
+          "verify_host_key": true,
+          "host_key_fingerprint": "SHA256:abc123..."
+        }
+      },
+      {
+        "id": "step2",
+        "name": "process-files",
+        "type": "FileProcessing",
+        "config": {
+          "operation": "read",
+          "format": "csv",
+          "source_files": "{{steps.step1.downloaded_files}}",
+          "transformations": [...]
+        }
+      },
+      {
+        "id": "step3",
+        "name": "upload-results",
+        "type": "SFTP",
+        "config": {
+          "operation": "upload",
+          "host": "sftp.partner.com",
+          "port": 22,
+          "username": "{{sftp_user}}",
+          "auth_type": "ssh_key",
+          "private_key_path": "{{sftp_private_key}}",
+          "local_files": "{{steps.step2.output_files}}",
+          "remote_path": "/outgoing/processed/",
+          "create_directories": true
+        }
+      }
+    ]
+  }
+end note
+
+== Step 1: Download Files from SFTP ==
+
+Worker -> MinIO: GET jobs/{job_id}/definition.json
+activate Worker
+activate MinIO
+MinIO --> Worker: Job definition
+deactivate MinIO
+
+Worker -> SFTPExec: Execute step1: download-source-files
+activate SFTPExec
+
+SFTPExec -> SFTPExec: Resolve variables:\nhost: sftp.partner.com\nusername: app_user\npassword: ***\nremote_path: /incoming/reports/*.csv
+
+SFTPExec -> SFTP: Connect to SFTP server\nHost: sftp.partner.com:22
+activate SFTP
+
+alt Connection successful
+  SFTP --> SFTPExec: SSH connection established
+  
+  SFTPExec -> SFTP: Authenticate with username/password
+  
+  alt Authentication successful
+    SFTP --> SFTPExec: Authenticated
+    
+    SFTPExec -> SFTP: Verify host key fingerprint
+    
+    alt Host key valid
+      SFTP --> SFTPExec: Host key verified
+      
+      SFTPExec -> SFTP: List files matching pattern:\n/incoming/reports/*.csv
+      
+      SFTP --> SFTPExec: File list:\n- report-2025-01-19.csv (1.2 MB)\n- report-2025-01-20.csv (1.5 MB)
+      
+      note over SFTPExec
+        **Download Strategy:**
+        - For files < 100MB: Download to memory, then upload to MinIO
+        - For files > 100MB: Stream directly to MinIO
+      end note
+      
+      loop For each file
+        SFTPExec -> SFTP: Download file: report-2025-01-19.csv
+        SFTP --> SFTPExec: File content (streaming)
+        
+        SFTPExec -> MinIO: PUT jobs/{job_id}/executions/{exec_id}/sftp/downloads/report-2025-01-19.csv\nBody: File stream
+        activate MinIO
+        MinIO --> SFTPExec: File stored
+        deactivate MinIO
+        
+        SFTPExec -> SFTPExec: Record file metadata:\n{\n  "filename": "report-2025-01-19.csv",\n  "size_bytes": 1258291,\n  "remote_path": "/incoming/reports/report-2025-01-19.csv",\n  "local_path": "jobs/{job_id}/executions/{exec_id}/sftp/downloads/report-2025-01-19.csv",\n  "download_time": "2025-01-20T06:00:05Z"\n}
+      end
+      
+      SFTPExec -> SFTP: Close connection
+      deactivate SFTP
+      
+      SFTPExec -> ContextMgr: Store step1 output in Job Context
+      activate ContextMgr
+      
+      ContextMgr -> ContextMgr: Update context:\n{\n  "steps": {\n    "step1": {\n      "status": "Success",\n      "operation": "download",\n      "sftp_host": "sftp.partner.com",\n      "files_downloaded": 2,\n      "total_size_bytes": 2758291,\n      "downloaded_files": [\n        {\n          "filename": "report-2025-01-19.csv",\n          "size_bytes": 1258291,\n          "remote_path": "/incoming/reports/report-2025-01-19.csv",\n          "local_path": "jobs/{job_id}/executions/{exec_id}/sftp/downloads/report-2025-01-19.csv"\n        },\n        {\n          "filename": "report-2025-01-20.csv",\n          "size_bytes": 1500000,\n          "remote_path": "/incoming/reports/report-2025-01-20.csv",\n          "local_path": "jobs/{job_id}/executions/{exec_id}/sftp/downloads/report-2025-01-20.csv"\n        }\n      ]\n    }\n  }\n}
+      
+      ContextMgr -> MinIO: PUT jobs/{job_id}/executions/{exec_id}/context.json
+      activate MinIO
+      MinIO --> ContextMgr: Context stored
+      deactivate MinIO
+      
+      ContextMgr --> SFTPExec: Context updated
+      deactivate ContextMgr
+      
+      SFTPExec --> Worker: Step1 completed\nFiles downloaded: 2
+      deactivate SFTPExec
+      
+    else Host key invalid
+      SFTP --> SFTPExec: Error: Host key mismatch
+      deactivate SFTP
+      
+      SFTPExec --> Worker: Error: SFTP host key verification failed\nExpected: SHA256:abc123...\nReceived: SHA256:xyz789...
+      deactivate SFTPExec
+      
+      Worker -> DB: UPDATE job_executions\nSET status = 'Failed',\nerror = 'Host key verification failed'
+      activate DB
+      DB --> Worker: Updated
+      deactivate DB
+      
+      Worker -> Worker: Do not retry (security error)
+      deactivate Worker
+    end
+    
+  else Authentication failed
+    SFTP --> SFTPExec: Error: Authentication failed
+    deactivate SFTP
+    
+    SFTPExec --> Worker: Error: SFTP authentication failed
+    deactivate SFTPExec
+    
+    Worker -> DB: UPDATE job_executions\nSET status = 'Failed',\nerror = 'Authentication failed'
+    activate DB
+    DB --> Worker: Updated
+    deactivate DB
+    
+    Worker -> Worker: Do not retry (permanent error)
+    deactivate Worker
+  end
+  
+else Connection failed
+  SFTP --> SFTPExec: Error: Connection timeout
+  deactivate SFTP
+  
+  SFTPExec --> Worker: Error: Cannot connect to SFTP server
+  deactivate SFTPExec
+  
+  Worker -> DB: UPDATE job_executions\nSET status = 'Failed',\nerror = 'Connection timeout',\nattempt = attempt + 1
+  activate DB
+  DB --> Worker: Updated
+  deactivate DB
+  
+  Worker -> Worker: Retry with exponential backoff (transient error)
+  deactivate Worker
+end
+
+== Step 2: Process Downloaded Files ==
+
+note over Worker
+  This step processes the downloaded CSV files
+  using FileProcessing job type
+  (see sequence-10-file-processing-job.puml)
+  
+  Input: {{steps.step1.downloaded_files}}
+  Output: Processed data and generated reports
+end note
+
+Worker -> Worker: Execute step2: process-files
+activate Worker
+
+Worker -> ContextMgr: Update context with step2 results
+activate ContextMgr
+
+ContextMgr -> ContextMgr: Add step2 output:\n{\n  "steps": {\n    "step1": {...},\n    "step2": {\n      "status": "Success",\n      "rows_processed": 5000,\n      "output_files": [\n        {\n          "filename": "processed-report-2025-01-20.xlsx",\n          "path": "jobs/{job_id}/executions/{exec_id}/output/processed-report-2025-01-20.xlsx",\n          "size_bytes": 256000\n        }\n      ]\n    }\n  }\n}
+
+ContextMgr -> MinIO: Update context
+activate MinIO
+MinIO --> ContextMgr: Updated
+deactivate MinIO
+
+ContextMgr --> Worker: Context updated
+deactivate ContextMgr
+deactivate Worker
+
+== Step 3: Upload Files to SFTP ==
+
+Worker -> SFTPExec: Execute step3: upload-results
+activate Worker
+activate SFTPExec
+
+SFTPExec -> MinIO: GET jobs/{job_id}/executions/{exec_id}/context.json
+activate MinIO
+MinIO --> SFTPExec: Job Context (with step2 output)
+deactivate MinIO
+
+SFTPExec -> SFTPExec: Resolve file references:\n{{steps.step2.output_files}}\n→ [\n  {\n    "filename": "processed-report-2025-01-20.xlsx",\n    "path": "jobs/{job_id}/executions/{exec_id}/output/processed-report-2025-01-20.xlsx"\n  }\n]
+
+SFTPExec -> SFTP: Connect to SFTP server\nHost: sftp.partner.com:22
+activate SFTP
+SFTP --> SFTPExec: Connected
+
+SFTPExec -> SFTP: Authenticate with SSH private key
+SFTP --> SFTPExec: Authenticated
+
+SFTPExec -> SFTP: Check if remote directory exists:\n/outgoing/processed/
+
+alt Directory does not exist
+  SFTP --> SFTPExec: Directory not found
+  
+  SFTPExec -> SFTP: Create directory:\nmkdir -p /outgoing/processed/
+  SFTP --> SFTPExec: Directory created
+end
+
+loop For each file to upload
+  SFTPExec -> MinIO: GET jobs/{job_id}/executions/{exec_id}/output/processed-report-2025-01-20.xlsx
+  activate MinIO
+  MinIO --> SFTPExec: File stream
+  deactivate MinIO
+  
+  SFTPExec -> SFTP: Upload file to:\n/outgoing/processed/processed-report-2025-01-20.xlsx\nBody: File stream
+  SFTP --> SFTPExec: Upload complete
+  
+  SFTPExec -> SFTPExec: Record upload metadata:\n{\n  "filename": "processed-report-2025-01-20.xlsx",\n  "size_bytes": 256000,\n  "local_path": "jobs/{job_id}/executions/{exec_id}/output/processed-report-2025-01-20.xlsx",\n  "remote_path": "/outgoing/processed/processed-report-2025-01-20.xlsx",\n  "upload_time": "2025-01-20T06:05:30Z"\n}
+end
+
+SFTPExec -> SFTP: Close connection
+deactivate SFTP
+
+SFTPExec -> ContextMgr: Store step3 output in Job Context
+activate ContextMgr
+
+ContextMgr -> ContextMgr: Update context:\n{\n  "steps": {\n    "step1": {...},\n    "step2": {...},\n    "step3": {\n      "status": "Success",\n      "operation": "upload",\n      "sftp_host": "sftp.partner.com",\n      "files_uploaded": 1,\n      "total_size_bytes": 256000,\n      "uploaded_files": [\n        {\n          "filename": "processed-report-2025-01-20.xlsx",\n          "size_bytes": 256000,\n          "local_path": "jobs/{job_id}/executions/{exec_id}/output/processed-report-2025-01-20.xlsx",\n          "remote_path": "/outgoing/processed/processed-report-2025-01-20.xlsx"\n        }\n      ]\n    }\n  },\n  "status": "Success"\n}
+
+ContextMgr -> MinIO: Update final context
+activate MinIO
+MinIO --> ContextMgr: Updated
+deactivate MinIO
+
+ContextMgr --> SFTPExec: Context finalized
+deactivate ContextMgr
+
+SFTPExec --> Worker: Step3 completed\nFiles uploaded: 1
+deactivate SFTPExec
+
+Worker -> DB: UPDATE job_executions\nSET status = 'Success', completed_at = NOW()
+activate DB
+DB --> Worker: Updated
+deactivate DB
+
+Worker -> Worker: Emit metrics:\nsftp_downloads_total: 2\nsftp_uploads_total: 1\nsftp_bytes_downloaded: 2758291\nsftp_bytes_uploaded: 256000
+
+deactivate Worker
+
+== Authentication Methods ==
+
+note over SFTPExec, SFTP
+  **Password Authentication:**
+  ```rust
+  let session = Session::new()?;
+  session.set_tcp_stream(tcp_stream);
+  session.handshake()?;
+  session.userauth_password(username, password)?;
+  ```
+  
+  **SSH Key Authentication:**
+  ```rust
+  let session = Session::new()?;
+  session.set_tcp_stream(tcp_stream);
+  session.handshake()?;
+  session.userauth_pubkey_file(
+      username,
+      None,  // public key (optional)
+      Path::new(private_key_path),
+      Some(passphrase)  // if key is encrypted
+  )?;
+  ```
+  
+  **Host Key Verification:**
+  ```rust
+  let host_key = session.host_key()?;
+  let fingerprint = format!("SHA256:{}", 
+      base64::encode(sha256(host_key)));
+  
+  if fingerprint != expected_fingerprint {
+      return Err("Host key mismatch");
+  }
+  ```
+end note
+
+== Wildcard Pattern Matching ==
+
+note over SFTPExec, SFTP
+  **Pattern Examples:**
+  
+  1. All CSV files:
+     /incoming/reports/*.csv
+     → report-2025-01-19.csv, report-2025-01-20.csv
+  
+  2. Files with date pattern:
+     /incoming/data-202501*.xlsx
+     → data-20250115.xlsx, data-20250120.xlsx
+  
+  3. All files in directory:
+     /incoming/reports/*
+     → All files in /incoming/reports/
+  
+  4. Recursive download:
+     /incoming/reports/**/*
+     → All files in /incoming/reports/ and subdirectories
+  
+  **Implementation:**
+  ```rust
+  let files = sftp.readdir(Path::new("/incoming/reports/"))?;
+  let pattern = glob::Pattern::new("*.csv")?;
+  
+  let matching_files: Vec<_> = files
+      .into_iter()
+      .filter(|(path, _)| {
+          path.file_name()
+              .and_then(|n| n.to_str())
+              .map(|n| pattern.matches(n))
+              .unwrap_or(false)
+      })
+      .collect();
+  ```
+end note
+
+== Error Handling ==
+
+note over Worker, SFTP
+  **Error Types and Retry Strategy:**
+  
+  **Transient Errors (Retry with backoff):**
+  - Connection timeout
+  - Network error
+  - Temporary server unavailable
+  - Rate limit exceeded
+  
+  **Permanent Errors (Fail immediately):**
+  - Authentication failed
+  - Host key verification failed
+  - File not found
+  - Permission denied
+  - Invalid path
+  
+  **Retry Configuration:**
+  - Max retries: 10
+  - Backoff: 5s, 15s, 1m, 5m, 30m...
+  - Jitter: Random ±20%
+  
+  **Error Messages:**
+  - Clear indication of error type
+  - Actionable suggestions
+  - Security-sensitive errors logged separately
+end note
+
+== Streaming Large Files ==
+
+note over SFTPExec, MinIO
+  **Streaming Strategy for Large Files (>100MB):**
+  
+  **Download:**
+  ```rust
+  let remote_file = sftp.open(Path::new(remote_path))?;
+  let mut buffer = vec![0; 8192]; // 8KB chunks
+  
+  let minio_client = MinIO::new();
+  let mut upload_stream = minio_client.put_object_stream(local_path)?;
+  
+  loop {
+      let bytes_read = remote_file.read(&mut buffer)?;
+      if bytes_read == 0 { break; }
+      upload_stream.write_all(&buffer[..bytes_read])?;
+  }
+  
+  upload_stream.finish()?;
+  ```
+  
+  **Upload:**
+  ```rust
+  let minio_client = MinIO::new();
+  let mut download_stream = minio_client.get_object_stream(local_path)?;
+  
+  let remote_file = sftp.create(Path::new(remote_path))?;
+  let mut buffer = vec![0; 8192];
+  
+  loop {
+      let bytes_read = download_stream.read(&mut buffer)?;
+      if bytes_read == 0 { break; }
+      remote_file.write_all(&buffer[..bytes_read])?;
+  }
+  ```
+  
+  **Benefits:**
+  - Constant memory usage
+  - Can handle files larger than available RAM
+  - Progress tracking possible
+  - Resumable transfers (with additional logic)
+end note
+
+== Security Considerations ==
+
+note over SFTPExec, SFTP
+  **Security Best Practices:**
+  
+  1. **Host Key Verification:**
+     - Always verify SFTP server host key
+     - Store known host keys securely
+     - Alert on host key changes
+  
+  2. **Credential Management:**
+     - Store passwords encrypted in variables
+     - Store SSH private keys in MinIO (encrypted)
+     - Never log credentials
+     - Rotate credentials regularly
+  
+  3. **Connection Security:**
+     - Use SSH protocol (encrypted by default)
+     - Disable weak ciphers
+     - Use strong key exchange algorithms
+  
+  4. **File Permissions:**
+     - Set appropriate permissions on uploaded files
+     - Verify read/write permissions before operations
+  
+  5. **Audit Logging:**
+     - Log all SFTP operations
+     - Include user, host, operation, files
+     - Monitor for suspicious activity
+end note
+
+== Metrics and Monitoring ==
+
+note over Worker
+  **Prometheus Metrics:**
+  
+  # SFTP operations
+  sftp_operations_total{operation="download|upload", status="success|failed"}
+  
+  # Files transferred
+  sftp_files_downloaded_total{host="sftp.partner.com"}
+  sftp_files_uploaded_total{host="sftp.partner.com"}
+  
+  # Bytes transferred
+  sftp_bytes_downloaded_total{host="sftp.partner.com"}
+  sftp_bytes_uploaded_total{host="sftp.partner.com"}
+  
+  # Transfer duration
+  sftp_transfer_duration_seconds{operation="download|upload"}
+  
+  # Connection errors
+  sftp_connection_errors_total{host="sftp.partner.com", error_type="..."}
+  
+  # Authentication failures
+  sftp_auth_failures_total{host="sftp.partner.com"}
+end note
+
+@enduml

@@ -1,0 +1,55 @@
+# Default configuration for Vietnam Enterprise Cron System
+# This file contains default values that can be overridden by:
+# 1. config/local.toml (not committed to git)
+# 2. Environment variables with APP__ prefix (e.g., APP__SERVER__PORT=8080)
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[database]
+url = "postgresql://localhost/vietnam_cron"
+max_connections = 10
+min_connections = 2
+connect_timeout_seconds = 30
+
+[redis]
+url = "redis://localhost:6379"
+pool_size = 10
+
+[nats]
+url = "nats://localhost:4222"
+stream_name = "job_stream"
+consumer_name = "job_consumer"
+
+[minio]
+endpoint = "http://localhost:9000"
+access_key = "minioadmin"
+secret_key = "minioadmin"
+bucket = "vietnam-cron"
+region = "us-east-1"
+
+[auth]
+mode = "database"  # Options: "database" or "keycloak"
+jwt_secret = "change-me-in-production"
+jwt_expiration_hours = 24
+
+# Keycloak configuration (only required if mode = "keycloak")
+# [auth.keycloak]
+# server_url = "http://localhost:8080"
+# realm = "vietnam-cron"
+# client_id = "vietnam-cron-client"
+
+[scheduler]
+poll_interval_seconds = 10
+lock_ttl_seconds = 30
+
+[worker]
+concurrency = 10
+max_retries = 10
+timeout_seconds = 300
+
+[observability]
+log_level = "info"
+metrics_port = 9090
+# tracing_endpoint = "http://localhost:4317"  # Optional OTLP endpoint

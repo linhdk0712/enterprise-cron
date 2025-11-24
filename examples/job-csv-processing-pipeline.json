@@ -1,0 +1,175 @@
+{
+    "name": "CSV Data Processing Pipeline",
+    "description": "Đọc CSV từ MinIO, xử lý dữ liệu, lưu database, tạo Excel summary",
+    "schedule": {
+        "type": "cron",
+        "expression": "0 0 8 * * *",
+        "timezone": "Asia/Ho_Chi_Minh"
+    },
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": null
+    },
+    "steps": [
+        {
+            "id": "read_csv_transactions",
+            "name": "Read Transaction CSV File",
+            "type": "file_processing",
+            "config": {
+                "operation": "read",
+                "format": "csv",
+                "source_path": "input/transactions.csv",
+                "options": {
+                    "delimiter": ",",
+                    "transformations": [
+                        {
+                            "type": "column_mapping",
+                            "from": "Transaction ID",
+                            "to": "transaction_id"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Customer ID",
+                            "to": "customer_id"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Amount",
+                            "to": "amount"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Date",
+                            "to": "transaction_date"
+                        },
+                        {
+                            "type": "type_conversion",
+                            "column": "amount",
+                            "target_type": "decimal"
+                        },
+                        {
+                            "type": "type_conversion",
+                            "column": "customer_id",
+                            "target_type": "integer"
+                        },
+                        {
+                            "type": "filter",
+                            "condition": "amount > 0"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "validate_customers",
+            "name": "Validate Customer IDs",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "SELECT customer_id, customer_name, customer_segment FROM customers WHERE customer_id = ANY($1::int[])",
+                "parameters": [
+                    "{{steps.read_csv_transactions.output.unique_customer_ids}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "save_transactions",
+            "name": "Save Transactions to Database",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "INSERT INTO transactions (transaction_id, customer_id, amount, transaction_date, imported_at) SELECT transaction_id, customer_id, amount, transaction_date::date, NOW() FROM json_populate_recordset(null::transactions, $1::json) ON CONFLICT (transaction_id) DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()",
+                "parameters": [
+                    "{{steps.read_csv_transactions.output.data}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 120
+            }
+        },
+        {
+            "id": "generate_summary",
+            "name": "Generate Transaction Summary",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "SELECT c.customer_segment, COUNT(t.transaction_id) as transaction_count, SUM(t.amount) as total_amount, AVG(t.amount) as avg_amount, MIN(t.amount) as min_amount, MAX(t.amount) as max_amount FROM transactions t JOIN customers c ON t.customer_id = c.customer_id WHERE t.imported_at::date = CURRENT_DATE GROUP BY c.customer_segment ORDER BY total_amount DESC",
+                "parameters": [],
+                "query_type": "raw_sql",
+                "timeout_seconds": 60
+            }
+        },
+        {
+            "id": "create_excel_summary",
+            "name": "Create Excel Summary Report",
+            "type": "file_processing",
+            "config": {
+                "operation": "write",
+                "format": "excel",
+                "destination_path": "reports/transaction_summary_{{execution_date}}.xlsx",
+                "data_source": "{{steps.generate_summary.output.rows}}",
+                "options": {
+                    "sheet_name": "Transaction Summary"
+                }
+            }
+        },
+        {
+            "id": "create_csv_details",
+            "name": "Create CSV Detail Report",
+            "type": "file_processing",
+            "config": {
+                "operation": "write",
+                "format": "csv",
+                "destination_path": "reports/transaction_details_{{execution_date}}.csv",
+                "data_source": "{{steps.read_csv_transactions.output.data}}",
+                "options": {
+                    "delimiter": ","
+                }
+            }
+        },
+        {
+            "id": "send_notification",
+            "name": "Send Completion Email",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/emails/send",
+                "headers": {
+                    "Authorization": "Bearer ${EMAIL_API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"to\": \"finance@example.com\", \"subject\": \"Daily Transaction Report\", \"body\": \"Transaction processing completed.\\n\\nTotal rows processed: {{steps.read_csv_transactions.output.row_count}}\\nTransactions saved: {{steps.save_transactions.output.affected_rows}}\\n\\nReports generated:\\n- Excel: {{steps.create_excel_summary.output.files[0].path}}\\n- CSV: {{steps.create_csv_details.output.files[0].path}}\"}",
+                "timeout_seconds": 15
+            }
+        }
+    ],
+    "timeout_seconds": 600,
+    "max_retries": 2,
+    "allow_concurrent": false,
+    "enabled": true,
+    "notes": {
+        "description": "Ví dụ về CSV processing pipeline với data transformations",
+        "csv_features": [
+            "Configurable delimiter (comma, semicolon, tab)",
+            "Column mapping để rename columns",
+            "Type conversion (string to integer, decimal)",
+            "Data filtering (amount > 0)",
+            "Output to both Excel and CSV formats"
+        ],
+        "file_paths": {
+            "input": "input/transactions.csv (in MinIO bucket)",
+            "output_excel": "reports/transaction_summary_{{execution_date}}.xlsx",
+            "output_csv": "reports/transaction_details_{{execution_date}}.csv"
+        },
+        "step_output_references": {
+            "row_count": "{{steps.read_csv_transactions.output.row_count}}",
+            "data": "{{steps.read_csv_transactions.output.data}}",
+            "file_path": "{{steps.create_excel_summary.output.files[0].path}}"
+        }
+    }
+}

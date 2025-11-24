@@ -1,0 +1,189 @@
+{{- if .Values.api.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vietnam-cron.fullname" . }}-api
+  labels:
+    {{- include "vietnam-cron.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vietnam-cron.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        {{- with .Values.api.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "vietnam-cron.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      {{- with (include "vietnam-cron.imagePullSecrets" . ) }}
+      imagePullSecrets:
+        {{- . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "vietnam-cron.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.api.podSecurityContext | nindent 8 }}
+      {{- if .Values.initContainers.runMigrations }}
+      initContainers:
+        - name: run-migrations
+          image: {{ include "vietnam-cron.image" . }}
+          imagePullPolicy: {{ .Values.initContainers.image.pullPolicy }}
+          command: ["sh", "-c", "sqlx migrate run --database-url $DATABASE_URL"]
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://{{ include "vietnam-cron.postgresql.username" . }}:$(POSTGRES_PASSWORD)@{{ include "vietnam-cron.postgresql.host" . }}:{{ include "vietnam-cron.postgresql.port" . }}/{{ include "vietnam-cron.postgresql.database" . }}"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vietnam-cron.postgresql.secretName" . }}
+                  key: password
+          volumeMounts:
+            - name: migrations
+              mountPath: /app/migrations
+              readOnly: true
+      {{- end }}
+      containers:
+        - name: api
+          securityContext:
+            {{- toYaml .Values.api.securityContext | nindent 12 }}
+          image: {{ include "vietnam-cron.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["api"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.observability.logLevel }}
+            - name: APP_SERVER__HOST
+              value: "0.0.0.0"
+            - name: APP_SERVER__PORT
+              value: "8080"
+            - name: APP_DATABASE__URL
+              value: "postgresql://{{ include "vietnam-cron.postgresql.username" . }}:$(POSTGRES_PASSWORD)@{{ include "vietnam-cron.postgresql.host" . }}:{{ include "vietnam-cron.postgresql.port" . }}/{{ include "vietnam-cron.postgresql.database" . }}"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vietnam-cron.postgresql.secretName" . }}
+                  key: password
+            - name: APP_REDIS__URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ include "vietnam-cron.redis.host" . }}:{{ include "vietnam-cron.redis.port" . }}"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vietnam-cron.redis.secretName" . }}
+                  key: password
+            - name: APP_NATS__URL
+              value: {{ include "vietnam-cron.nats.url" . }}
+            - name: APP_MINIO__ENDPOINT
+              value: {{ include "vietnam-cron.minio.endpoint" . }}
+            - name: APP_MINIO__ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vietnam-cron.minio.secretName" . }}
+                  key: rootUser
+            - name: APP_MINIO__SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vietnam-cron.minio.secretName" . }}
+                  key: rootPassword
+            - name: APP_MINIO__BUCKET_NAME
+              value: {{ .Values.minio.buckets | first | default (dict "name" "vietnam-cron") | get "name" }}
+            - name: APP_MINIO__USE_SSL
+              value: {{ if .Values.minio.enabled }}"false"{{ else }}{{ .Values.externalMinio.useSSL | quote }}{{ end }}
+            - name: APP_AUTH__MODE
+              value: {{ .Values.auth.mode }}
+            {{- if eq .Values.auth.mode "database" }}
+            - name: APP_AUTH__JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vietnam-cron.fullname" . }}
+                  key: jwt-secret
+            {{- end }}
+            - name: APP_AUTH__JWT_EXPIRY_HOURS
+              value: {{ .Values.auth.jwtExpiryHours | quote }}
+            {{- if eq .Values.auth.mode "keycloak" }}
+            - name: APP_AUTH__KEYCLOAK__SERVER_URL
+              value: {{ .Values.auth.keycloak.serverUrl }}
+            - name: APP_AUTH__KEYCLOAK__REALM
+              value: {{ .Values.auth.keycloak.realm }}
+            - name: APP_AUTH__KEYCLOAK__CLIENT_ID
+              value: {{ .Values.auth.keycloak.clientId }}
+            {{- end }}
+            - name: APP_OBSERVABILITY__LOG_LEVEL
+              value: {{ .Values.observability.logLevel }}
+            - name: APP_OBSERVABILITY__METRICS_PORT
+              value: "9090"
+            {{- if .Values.observability.tracingEnabled }}
+            - name: APP_OBSERVABILITY__TRACING_ENDPOINT
+              value: {{ .Values.observability.tracingEndpoint }}
+            {{- end }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if or .Values.extraEnvVarsSecret .Values.extraEnvVarsConfigMap }}
+          envFrom:
+            {{- if .Values.extraEnvVarsSecret }}
+            - secretRef:
+                name: {{ .Values.extraEnvVarsSecret }}
+            {{- end }}
+            {{- if .Values.extraEnvVarsConfigMap }}
+            - configMapRef:
+                name: {{ .Values.extraEnvVarsConfigMap }}
+            {{- end }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "vietnam-cron.fullname" . }}
+        {{- if .Values.initContainers.runMigrations }}
+        - name: migrations
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

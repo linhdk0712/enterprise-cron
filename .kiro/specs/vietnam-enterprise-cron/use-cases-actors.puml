@@ -1,0 +1,202 @@
+@startuml Actor Interactions - System Context
+
+title Vietnam Enterprise Cron System - Actor Interactions
+
+' Human Actors
+actor "System Administrator" as Admin #LightBlue
+actor "Platform Engineer" as Engineer #LightGreen
+actor "DevOps Engineer" as DevOps #LightYellow
+actor "Security Administrator" as Security #LightPink
+
+' System Actors (Processes)
+actor "Scheduler Process" as Scheduler #Technology
+actor "Worker Process" as Worker #Technology
+actor "API Server" as API #Technology
+
+' External Systems
+actor "Keycloak\n(Identity Provider)" as Keycloak #LightGray
+actor "Target Databases\n(Oracle/MySQL/PostgreSQL)" as TargetDB #LightGray
+actor "External HTTP APIs" as ExternalAPI #LightGray
+actor "Monitoring Stack\n(Prometheus/Grafana/Jaeger)" as Monitoring #LightGray
+
+' Infrastructure
+database "PostgreSQL\n(System Database)" as SystemDB #Database
+database "Redis Cluster\n(Distributed Locks)" as Redis #Database
+queue "NATS JetStream\n(Job Queue)" as NATS #Queue
+
+' System Boundary
+rectangle "Vietnam Enterprise Cron System" {
+  
+  package "API Layer" {
+    component "REST API" as REST
+    component "HTMX Dashboard" as Dashboard
+    component "Server-Sent Events" as SSE
+    component "JWT Middleware" as JWT
+    component "RBAC Middleware" as RBAC
+  }
+  
+  package "Scheduler Layer" {
+    component "Job Detector" as Detector
+    component "Lock Manager" as LockMgr
+    component "Job Publisher" as Publisher
+  }
+  
+  package "Worker Layer" {
+    component "Job Consumer" as Consumer
+    component "HTTP Executor" as HTTPExec
+    component "Database Executor" as DBExec
+    component "Variable Resolver" as VarResolver
+    component "Retry Manager" as RetryMgr
+    component "Circuit Breaker" as CircuitBreaker
+  }
+  
+  package "Data Layer" {
+    component "Job Repository" as JobRepo
+    component "Execution Repository" as ExecRepo
+    component "Variable Repository" as VarRepo
+    component "User Repository" as UserRepo
+  }
+  
+  package "Observability Layer" {
+    component "Structured Logger" as Logger
+    component "Metrics Exporter" as Metrics
+    component "Trace Exporter" as Traces
+  }
+}
+
+' Human Actor Interactions
+Admin --> Dashboard : "Manage jobs\nand variables"
+Admin --> REST : "CRUD operations"
+Admin --> SSE : "Real-time updates"
+
+Engineer --> Dashboard : "Monitor system\nhealth"
+Engineer --> REST : "View statistics"
+
+DevOps --> Monitoring : "View metrics\nand traces"
+DevOps --> Dashboard : "Troubleshoot\nissues"
+
+Security --> REST : "Manage users\nand roles"
+Security --> Keycloak : "Configure\nidentity provider"
+
+' API Layer Interactions
+REST --> JWT : "Validate token"
+REST --> RBAC : "Check permissions"
+JWT --> Keycloak : "Validate JWT\n(Keycloak mode)"
+JWT --> UserRepo : "Validate credentials\n(Database mode)"
+REST --> JobRepo : "Job CRUD"
+REST --> ExecRepo : "Query history"
+REST --> VarRepo : "Variable CRUD"
+Dashboard --> REST : "API calls"
+SSE --> ExecRepo : "Subscribe to\nchanges"
+
+' Scheduler Layer Interactions
+Scheduler --> Detector : "Poll for\ndue jobs"
+Detector --> JobRepo : "Find jobs due"
+Detector --> LockMgr : "Acquire lock"
+LockMgr --> Redis : "RedLock\nalgorithm"
+Detector --> Publisher : "Publish job"
+Publisher --> NATS : "Enqueue job"
+Publisher --> ExecRepo : "Create execution\nrecord"
+
+' Worker Layer Interactions
+Worker --> Consumer : "Consume jobs"
+Consumer --> NATS : "Subscribe to\nstream"
+Consumer --> ExecRepo : "Check idempotency"
+Consumer --> HTTPExec : "Execute HTTP job"
+Consumer --> DBExec : "Execute DB job"
+HTTPExec --> VarResolver : "Resolve variables"
+DBExec --> VarResolver : "Resolve variables"
+VarResolver --> VarRepo : "Load variables"
+HTTPExec --> ExternalAPI : "Send HTTP\nrequest"
+DBExec --> TargetDB : "Execute query"
+HTTPExec --> RetryMgr : "Handle failure"
+DBExec --> RetryMgr : "Handle failure"
+HTTPExec --> CircuitBreaker : "Check circuit\nstate"
+DBExec --> CircuitBreaker : "Check circuit\nstate"
+Consumer --> ExecRepo : "Update execution\nresult"
+
+' Observability Interactions
+API --> Logger : "Log operations"
+Scheduler --> Logger : "Log scheduling"
+Worker --> Logger : "Log execution"
+API --> Metrics : "Export metrics"
+Scheduler --> Metrics : "Export metrics"
+Worker --> Metrics : "Export metrics"
+API --> Traces : "Create spans"
+Scheduler --> Traces : "Create spans"
+Worker --> Traces : "Create spans"
+Metrics --> Monitoring : "Scrape metrics"
+Traces --> Monitoring : "Send traces"
+Logger --> Monitoring : "Ship logs"
+
+' Data Layer Interactions
+JobRepo --> SystemDB : "CRUD jobs"
+ExecRepo --> SystemDB : "CRUD executions"
+VarRepo --> SystemDB : "CRUD variables"
+UserRepo --> SystemDB : "CRUD users"
+
+' Notes
+note right of Admin
+  **Primary User**
+  
+  Responsibilities:
+  - Create and manage jobs
+  - Configure schedules
+  - Manage variables
+  - Monitor executions
+  - Trigger manual runs
+end note
+
+note right of Scheduler
+  **Distributed Process**
+  
+  Multiple instances run
+  concurrently with
+  distributed locking
+  
+  Ensures exactly-once
+  job scheduling
+end note
+
+note right of Worker
+  **Horizontally Scalable**
+  
+  Auto-scales based on
+  queue depth
+  
+  Processes jobs with
+  exactly-once guarantee
+end note
+
+note bottom of SystemDB
+  **System Database**
+  
+  Stores:
+  - Job definitions
+  - Execution history
+  - Variables (encrypted)
+  - Users and roles
+  - Job statistics
+end note
+
+note bottom of Redis
+  **Distributed Locking**
+  
+  RedLock algorithm with
+  3+ nodes for safety
+  
+  Prevents duplicate
+  job scheduling
+end note
+
+note bottom of NATS
+  **Job Queue**
+  
+  JetStream features:
+  - Exactly-once delivery
+  - Message persistence
+  - High availability
+  - Acknowledgment tracking
+end note
+
+@enduml

@@ -1,0 +1,83 @@
+{
+    "name": "Process Daily Excel Report",
+    "description": "Đọc file Excel, xử lý dữ liệu và lưu vào database",
+    "schedule": {
+        "type": "cron",
+        "expression": "0 30 7 * * *",
+        "timezone": "Asia/Ho_Chi_Minh"
+    },
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": null
+    },
+    "steps": [
+        {
+            "id": "read_excel",
+            "name": "Read Excel File",
+            "type": "file_processing",
+            "config": {
+                "operation": "read",
+                "format": "excel",
+                "source_path": "reports/daily_sales.xlsx",
+                "options": {
+                    "sheet_name": "Sales Data",
+                    "transformations": [
+                        {
+                            "type": "column_mapping",
+                            "from": "Product ID",
+                            "to": "product_id"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Quantity",
+                            "to": "quantity"
+                        },
+                        {
+                            "type": "type_conversion",
+                            "column": "quantity",
+                            "target_type": "integer"
+                        },
+                        {
+                            "type": "filter",
+                            "condition": "quantity > 0"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "save_to_database",
+            "name": "Save Processed Data",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "INSERT INTO sales_data (product_id, quantity, processed_date) SELECT product_id, quantity, CURRENT_DATE FROM json_populate_recordset(null::sales_data, $1::json)",
+                "parameters": [
+                    "{{steps.read_excel.output.data}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 120
+            }
+        },
+        {
+            "id": "generate_summary",
+            "name": "Generate Summary Report",
+            "type": "file_processing",
+            "config": {
+                "operation": "write",
+                "format": "csv",
+                "destination_path": "reports/summary_{{execution_id}}.csv",
+                "data_source": "{{steps.save_to_database.output.summary}}",
+                "options": {
+                    "delimiter": ","
+                }
+            }
+        }
+    ],
+    "timeout_seconds": 600,
+    "max_retries": 2,
+    "allow_concurrent": false,
+    "enabled": true
+}

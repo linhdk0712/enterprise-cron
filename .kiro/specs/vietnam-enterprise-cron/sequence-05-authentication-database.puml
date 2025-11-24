@@ -1,0 +1,290 @@
+@startuml Authentication Flow - Database Mode
+
+title Authentication & Authorization - Database Mode
+
+actor "Admin User" as User
+participant "Browser" as Browser
+participant "API Server\n(Axum)" as API
+participant "Auth Handler" as AuthHandler
+participant "JWT Middleware" as JWT
+participant "RBAC Middleware" as RBAC
+participant "PostgreSQL\n(System DB)" as DB
+participant "Audit Logger" as Audit
+
+== User Login ==
+
+User -> Browser: Navigate to login page
+Browser -> Browser: Display login form
+
+User -> Browser: Enter username/password
+Browser -> API: POST /api/auth/login\nBody: {\n  "username": "admin",\n  "password": "MySecurePassword123"\n}
+activate API
+
+API -> AuthHandler: Handle login request
+activate AuthHandler
+
+== Validate Credentials ==
+
+AuthHandler -> DB: SELECT u.id, u.username, u.password_hash, u.enabled,\n       array_agg(p.permission) as permissions\nFROM users u\nJOIN user_roles ur ON u.id = ur.user_id\nJOIN roles r ON ur.role_id = r.id,\n     unnest(r.permissions) as p(permission)\nWHERE u.username = $1\nGROUP BY u.id
+activate DB
+
+alt User found
+  DB --> AuthHandler: User record:\n{\n  id: "user-uuid",\n  username: "admin",\n  password_hash: "$2b$12$...",\n  enabled: true,\n  permissions: ["job:read", "job:write", "job:execute", "job:delete", "execution:read"]\n}
+  deactivate DB
+  
+  AuthHandler -> AuthHandler: Verify password using bcrypt:\nbcrypt::verify("MySecurePassword123", "$2b$12$...")
+  
+  alt Password valid and user enabled
+    AuthHandler -> AuthHandler: Password matches!
+    
+    == Generate JWT Token ==
+    
+    AuthHandler -> AuthHandler: Create JWT claims:\n{\n  "sub": "user-uuid",\n  "username": "admin",\n  "permissions": ["job:read", "job:write", ...],\n  "exp": now + 24 hours,\n  "iat": now,\n  "iss": "vietnam-cron-system"\n}
+    
+    AuthHandler -> AuthHandler: Sign JWT with system private key (RS256)
+    
+    AuthHandler -> AuthHandler: Generate refresh token (optional)
+    
+    == Log Successful Login ==
+    
+    AuthHandler -> Audit: Log login:\n{\n  "timestamp": "2025-01-20T10:00:00Z",\n  "user_id": "user-uuid",\n  "username": "admin",\n  "operation": "login",\n  "result": "success",\n  "ip_address": "192.168.1.100"\n}
+    
+    AuthHandler --> API: JWT token generated
+    deactivate AuthHandler
+    
+    API --> Browser: 200 OK\n{\n  "token": "eyJhbGciOiJSUzI1NiIs...",\n  "expires_in": 86400,\n  "token_type": "Bearer"\n}
+    deactivate API
+    
+    Browser -> Browser: Store token in localStorage
+    Browser -> User: Redirect to dashboard
+    
+  else Password invalid
+    AuthHandler -> Audit: Log failed login:\n{\n  "username": "admin",\n  "operation": "login",\n  "result": "failed",\n  "reason": "Invalid password"\n}
+    
+    AuthHandler --> API: Authentication failed
+    deactivate AuthHandler
+    
+    API --> Browser: 401 Unauthorized\n{error: "Invalid username or password"}
+    deactivate API
+    
+    Browser -> User: Show error message
+  end
+  
+else User not found
+  DB --> AuthHandler: No user found
+  deactivate DB
+  
+  AuthHandler -> AuthHandler: Perform dummy bcrypt check\n(prevent timing attacks)
+  
+  AuthHandler -> Audit: Log failed login:\n{\n  "username": "admin",\n  "operation": "login",\n  "result": "failed",\n  "reason": "User not found"\n}
+  
+  AuthHandler --> API: Authentication failed
+  deactivate AuthHandler
+  
+  API --> Browser: 401 Unauthorized\n{error: "Invalid username or password"}
+  deactivate API
+  
+  Browser -> User: Show error message
+end
+
+== Subsequent API Request with JWT ==
+
+User -> Browser: Click "Create Job"
+Browser -> API: POST /api/jobs\nAuthorization: Bearer {jwt_token}\nBody: {job_config}
+activate API
+
+== JWT Validation ==
+
+API -> JWT: Validate JWT token
+activate JWT
+
+JWT -> JWT: Extract token from Authorization header
+
+JWT -> JWT: Decode JWT header and payload
+
+JWT -> JWT: Verify JWT signature using system public key
+
+alt Signature valid
+  JWT -> JWT: Check expiration (exp claim)
+  
+  alt Token not expired
+    JWT -> JWT: Check issuer (iss claim)
+    
+    alt Issuer valid (vietnam-cron-system)
+      JWT -> JWT: Extract user claims:\n- sub (user ID)\n- username\n- permissions
+      
+      JWT --> API: Valid token\nUser claims: {sub, username, permissions}
+      deactivate JWT
+      
+    else Issuer invalid
+      JWT --> API: 401 Unauthorized\n{error: "Invalid token issuer"}
+      deactivate JWT
+      API --> Browser: 401 Unauthorized
+      deactivate API
+      Browser -> User: Redirect to login
+    end
+    
+  else Token expired
+    JWT --> API: 401 Unauthorized\n{error: "Token expired"}
+    deactivate JWT
+    API --> Browser: 401 Unauthorized
+    deactivate API
+    Browser -> User: Redirect to login
+  end
+  
+else Signature invalid
+  JWT --> API: 401 Unauthorized\n{error: "Invalid token signature"}
+  deactivate JWT
+  API --> Browser: 401 Unauthorized
+  deactivate API
+  Browser -> User: Redirect to login
+end
+
+== RBAC Permission Check ==
+
+API -> RBAC: Check permission: "job:write"
+activate RBAC
+
+RBAC -> RBAC: Extract permissions from JWT claims:\n["job:read", "job:write", "job:execute", "job:delete", "execution:read"]
+
+RBAC -> RBAC: Check if "job:write" in permissions
+
+alt Permission granted
+  RBAC --> API: Permission granted
+  deactivate RBAC
+  
+  == Execute Business Logic ==
+  
+  API -> DB: INSERT INTO jobs (...) VALUES (...)
+  activate DB
+  DB --> API: Job created
+  deactivate DB
+  
+  API -> Audit: Log operation:\n{\n  "user_id": "user-uuid",\n  "username": "admin",\n  "operation": "create_job",\n  "result": "success"\n}
+  
+  API --> Browser: 201 Created
+  deactivate API
+  Browser -> User: Show success
+  
+else Permission denied
+  RBAC --> API: 403 Forbidden
+  deactivate RBAC
+  
+  API -> Audit: Log failed operation
+  API --> Browser: 403 Forbidden
+  deactivate API
+  Browser -> User: Show error
+end
+
+== User Management (Admin Operations) ==
+
+note over User, DB
+  **Create User:**
+  1. Admin submits user details
+  2. System validates input
+  3. Hash password with bcrypt (cost: 12)
+  4. Insert into users table
+  5. Assign default roles
+  
+  **Update User:**
+  1. Admin updates user details
+  2. If password changed: hash with bcrypt
+  3. Update users table
+  
+  **Assign Roles:**
+  1. Admin selects user and roles
+  2. Insert into user_roles table
+  3. Permissions take effect immediately
+  
+  **Disable User:**
+  1. Admin disables user
+  2. Set enabled = false
+  3. User cannot login
+  4. Existing tokens remain valid until expiration
+end note
+
+== Role Management ==
+
+note over DB
+  **Database Schema:**
+  
+  users:
+  - id (UUID)
+  - username (unique)
+  - password_hash (bcrypt)
+  - email
+  - enabled (boolean)
+  - created_at
+  - updated_at
+  
+  roles:
+  - id (UUID)
+  - name (e.g., "admin", "operator")
+  - permissions (text[] array)
+  - created_at
+  
+  user_roles:
+  - user_id (FK to users)
+  - role_id (FK to roles)
+  - PRIMARY KEY (user_id, role_id)
+  
+  **Example Roles:**
+  
+  admin:
+  - permissions: ["job:*", "execution:*", "variable:*", "user:*"]
+  
+  job-manager:
+  - permissions: ["job:read", "job:write", "job:execute", "job:delete", "execution:read", "variable:read", "variable:write"]
+  
+  operator:
+  - permissions: ["job:read", "job:execute", "execution:read"]
+  
+  viewer:
+  - permissions: ["job:read", "execution:read"]
+end note
+
+== Token Refresh ==
+
+note over User, API
+  **Token Refresh Flow:**
+  
+  Option 1: Short-lived access token + long-lived refresh token
+  1. Access token expires after 1 hour
+  2. Frontend detects expiration
+  3. POST /api/auth/refresh with refresh token
+  4. System validates refresh token
+  5. Issue new access token
+  
+  Option 2: Long-lived access token
+  1. Access token expires after 24 hours
+  2. User must re-login after expiration
+  3. Simpler implementation
+  
+  Current implementation: Option 2 (24-hour tokens)
+end note
+
+== Security Considerations ==
+
+note over AuthHandler, DB
+  **Password Security:**
+  ✓ bcrypt hashing (cost factor: 12)
+  ✓ Automatic salt generation
+  ✓ Timing attack prevention (dummy check)
+  
+  **Token Security:**
+  ✓ RS256 signature (asymmetric)
+  ✓ Short expiration (24 hours)
+  ✓ Secure token storage (httpOnly cookies or localStorage)
+  
+  **Audit Logging:**
+  ✓ All login attempts logged
+  ✓ All operations logged with user identity
+  ✓ Failed authentication attempts tracked
+  
+  **Rate Limiting:**
+  ✓ Login endpoint rate limited (5 attempts per minute)
+  ✓ Account lockout after 5 failed attempts
+  ✓ Unlock after 15 minutes or admin intervention
+end note
+
+@enduml

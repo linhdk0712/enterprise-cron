@@ -1,0 +1,463 @@
+@startuml Distributed Coordination Use Cases - Detailed
+
+title Distributed Coordination - Detailed Use Cases
+
+actor "Scheduler Node 1" as Scheduler1
+actor "Scheduler Node N" as SchedulerN
+actor "Worker Node 1" as Worker1
+actor "Worker Node N" as WorkerN
+actor "Redis Cluster" as Redis
+actor "NATS JetStream" as NATS
+actor "PostgreSQL" as DB
+
+rectangle "Distributed Coordination Subsystem" {
+  
+  usecase "Acquire Distributed Lock" as UC1 {
+    --
+    **RedLock Algorithm:**
+    1. Generate unique lock ID
+    2. Try to acquire lock on majority of Redis nodes
+    3. If majority acquired within timeout:
+       - Lock acquired successfully
+    4. If not:
+       - Release all locks
+       - Retry with backoff
+    --
+    **Validates:** Req 4.1, 7.1
+  }
+  
+  usecase "Acquire Lock on Redis Node" as UC1_1 {
+    --
+    **Redis Command:**
+    SET resource_name lock_id NX PX ttl_ms
+    
+    - NX: Only set if not exists
+    - PX: Set expiration in milliseconds
+    - TTL: 30 seconds (configurable)
+    --
+  }
+  
+  usecase "Release Distributed Lock" as UC1_2 {
+    --
+    **Release Process:**
+    1. Verify lock ID matches
+    2. Delete lock from all Redis nodes
+    3. Log lock release
+    
+    **Lua Script for Atomicity:**
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+      return redis.call("del", KEYS[1])
+    else
+      return 0
+    end
+    --
+  }
+  
+  usecase "Handle Lock Acquisition Failure" as UC1_3 {
+    --
+    **Failure Scenarios:**
+    - Majority of Redis nodes unavailable
+    - Lock already held by another node
+    - Network timeout
+    
+    **Response:**
+    - Log failure
+    - Skip this scheduling cycle
+    - Retry in next poll interval
+    --
+  }
+  
+  usecase "Ensure Single Scheduler Execution" as UC2 {
+    --
+    **Coordination Flow:**
+    1. All scheduler nodes poll database
+    2. Each node tries to acquire lock for job
+    3. Only one node succeeds
+    4. Winner publishes job to queue
+    5. Loser nodes skip this job
+    
+    **Guarantee:** Only 1 of N nodes schedules
+    --
+    **Validates:** Req 4.1, 7.1
+  }
+  
+  usecase "Publish Job to Queue" as UC3 {
+    --
+    **NATS JetStream Publish:**
+    1. Create JobExecution record in DB
+    2. Generate idempotency key
+    3. Serialize job message
+    4. Publish to NATS stream
+    5. Wait for acknowledgment
+    6. Release distributed lock
+    --
+    **Validates:** Req 4.1
+  }
+  
+  usecase "Configure NATS Stream" as UC3_1 {
+    --
+    **Stream Configuration:**
+    - Name: "jobs"
+    - Subjects: "jobs.*"
+    - Retention: WorkQueue
+    - Max age: 7 days
+    - Max messages: 1,000,000
+    - Replicas: 3 (for HA)
+    - Acknowledgment: Explicit
+    --
+  }
+  
+  usecase "Handle Publish Failure" as UC3_2 {
+    --
+    **Failure Handling:**
+    1. Log publish error
+    2. Rollback JobExecution record
+    3. Release distributed lock
+    4. Job will be retried in next cycle
+    --
+  }
+  
+  usecase "Consume Job from Queue" as UC4 {
+    --
+    **NATS JetStream Consumer:**
+    1. Subscribe to "jobs" stream
+    2. Receive job message
+    3. Process job (execute)
+    4. Acknowledge message on success
+    5. Negative acknowledge on failure
+    --
+    **Validates:** Req 4.2
+  }
+  
+  usecase "Configure NATS Consumer" as UC4_1 {
+    --
+    **Consumer Configuration:**
+    - Durable name: "workers"
+    - Ack policy: Explicit
+    - Max deliver: 11 (1 + 10 retries)
+    - Ack wait: 5 minutes
+    - Max ack pending: 100
+    - Deliver policy: All
+    --
+  }
+  
+  usecase "Handle Message Redelivery" as UC4_2 {
+    --
+    **Redelivery Scenarios:**
+    - Worker crashes before ack
+    - Ack timeout exceeded
+    - Negative acknowledgment
+    
+    **Protection:**
+    - Idempotency key check
+    - Prevents duplicate execution
+    --
+  }
+  
+  usecase "Ensure Exactly-Once Execution" as UC5 {
+    --
+    **Multi-Layer Protection:**
+    
+    Layer 1: Distributed Lock (Scheduler)
+    - Only one scheduler publishes
+    
+    Layer 2: Idempotency Key (Worker)
+    - Check DB before execution
+    - Skip if already executed
+    
+    Layer 3: Database Constraint
+    - Unique constraint on idempotency_key
+    - Prevents duplicate inserts
+    
+    Layer 4: NATS Acknowledgment
+    - Explicit ack prevents redelivery
+    --
+    **Validates:** Req 4.2, 4.3, 4.4
+  }
+  
+  usecase "Check Idempotency Key" as UC5_1 {
+    --
+    **Check Process:**
+    1. Extract idempotency key from message
+    2. Query job_executions table
+    3. If key exists:
+       - Log duplicate detection
+       - Skip execution
+       - Acknowledge message
+    4. If key not exists:
+       - Proceed with execution
+    --
+    **Validates:** Req 4.3
+  }
+  
+  usecase "Generate Idempotency Key" as UC5_2 {
+    --
+    **Key Generation:**
+    Format: {job_id}:{scheduled_time}:{uuid}
+    
+    Example:
+    550e8400-e29b-41d4-a716-446655440000:
+    2025-01-20T10:00:00Z:
+    7c9e6679-7425-40de-944b-e07fc1f90ae7
+    
+    Ensures uniqueness across all executions
+    --
+    **Validates:** Req 4.4
+  }
+  
+  usecase "Activate Circuit Breaker" as UC6 {
+    --
+    **Circuit Breaker States:**
+    
+    CLOSED (Normal):
+    - All requests pass through
+    - Track failure rate
+    
+    OPEN (Failing):
+    - Fail fast without execution
+    - After timeout, transition to half-open
+    
+    HALF-OPEN (Testing):
+    - Allow limited requests
+    - If success: close circuit
+    - If failure: reopen circuit
+    --
+    **Validates:** Req 4.7
+  }
+  
+  usecase "Track Failure Rate" as UC6_1 {
+    --
+    **Failure Tracking:**
+    - Window: Last 100 requests
+    - Threshold: 50% failure rate
+    - Consecutive failures: 5
+    
+    If threshold exceeded:
+    - Open circuit breaker
+    - Log event
+    - Emit metric
+    --
+  }
+  
+  usecase "Handle Circuit Open" as UC6_2 {
+    --
+    **When Circuit Open:**
+    1. Immediately fail execution
+    2. Don't attempt external call
+    3. Log circuit open event
+    4. Return error to caller
+    5. Wait for timeout (30 seconds)
+    6. Transition to half-open
+    --
+  }
+  
+  usecase "Coordinate Graceful Shutdown" as UC7 {
+    --
+    **Shutdown Process:**
+    
+    1. Receive SIGTERM/SIGINT signal
+    2. Stop accepting new work
+    3. Complete in-flight operations
+    4. Release all locks
+    5. Close connections
+    6. Exit process
+    
+    **Timeout:** 30 seconds max
+    --
+    **Validates:** Req 7.6, 7.7
+  }
+  
+  usecase "Scheduler Graceful Shutdown" as UC7_1 {
+    --
+    **Scheduler Shutdown:**
+    1. Stop polling for new jobs
+    2. Complete current lock acquisitions
+    3. Finish publishing queued jobs
+    4. Release all distributed locks
+    5. Close Redis connections
+    6. Close NATS connections
+    7. Close database connections
+    --
+    **Validates:** Req 7.6
+  }
+  
+  usecase "Worker Graceful Shutdown" as UC7_2 {
+    --
+    **Worker Shutdown:**
+    1. Stop consuming new messages
+    2. Complete in-flight executions
+    3. Acknowledge completed jobs
+    4. Negative ack incomplete jobs
+    5. Close all connections
+    6. Exit cleanly
+    --
+    **Validates:** Req 7.7
+  }
+  
+  usecase "Handle Redis Cluster Failure" as UC8 {
+    --
+    **Failure Scenarios:**
+    - Majority of nodes down
+    - Network partition
+    - Redis node crash
+    
+    **Fallback:**
+    - Log error
+    - Skip scheduling cycle
+    - System remains available
+    - Resume when Redis recovers
+    --
+  }
+  
+  usecase "Handle NATS Cluster Failure" as UC9 {
+    --
+    **Failure Scenarios:**
+    - NATS node down
+    - Stream unavailable
+    - Network partition
+    
+    **Resilience:**
+    - NATS cluster (3 nodes)
+    - Automatic failover
+    - Message persistence
+    - Reconnection logic
+    --
+  }
+}
+
+' Scheduler relationships
+Scheduler1 --> UC1
+Scheduler1 --> UC2
+Scheduler1 --> UC3
+Scheduler1 --> UC7_1
+SchedulerN --> UC1
+SchedulerN --> UC2
+SchedulerN --> UC3
+SchedulerN --> UC7_1
+
+' Worker relationships
+Worker1 --> UC4
+Worker1 --> UC5
+Worker1 --> UC6
+Worker1 --> UC7_2
+WorkerN --> UC4
+WorkerN --> UC5
+WorkerN --> UC6
+WorkerN --> UC7_2
+
+' External system relationships
+UC1 --> Redis : <<acquires lock>>
+UC1_1 --> Redis : <<SET NX PX>>
+UC1_2 --> Redis : <<DEL>>
+UC3 --> NATS : <<publishes>>
+UC4 --> NATS : <<consumes>>
+UC5_1 --> DB : <<queries>>
+
+' Include/Extend relationships
+UC1 ..> UC1_1 : <<include>>
+UC1 ..> UC1_2 : <<include>>
+UC1 ..> UC1_3 : <<extend>>
+
+UC2 ..> UC1 : <<include>>
+UC2 ..> UC3 : <<include>>
+
+UC3 ..> UC3_1 : <<include>>
+UC3 ..> UC3_2 : <<extend>>
+
+UC4 ..> UC4_1 : <<include>>
+UC4 ..> UC4_2 : <<extend>>
+UC4 ..> UC5 : <<include>>
+
+UC5 ..> UC5_1 : <<include>>
+UC5 ..> UC5_2 : <<include>>
+
+UC6 ..> UC6_1 : <<include>>
+UC6 ..> UC6_2 : <<include>>
+
+UC7 ..> UC7_1 : <<extend>>
+UC7 ..> UC7_2 : <<extend>>
+
+' Notes
+note right of UC1
+  **RedLock Algorithm:**
+  
+  Requires 3+ Redis nodes for safety
+  
+  Lock acquired if:
+  - Majority of nodes respond
+  - Total time < lock TTL
+  
+  Prevents split-brain scenarios
+  
+  Reference: https://redis.io/docs/manual/patterns/distributed-locks/
+end note
+
+note right of UC5
+  **Exactly-Once Guarantee:**
+  
+  Multiple layers of protection:
+  
+  1. Distributed lock prevents
+     multiple schedulers from
+     publishing same job
+  
+  2. Idempotency key prevents
+     multiple workers from
+     executing same job
+  
+  3. Database unique constraint
+     prevents duplicate records
+  
+  4. NATS acknowledgment prevents
+     message redelivery
+  
+  All layers work together!
+end note
+
+note bottom of UC3
+  **NATS JetStream Benefits:**
+  
+  ✓ Exactly-once delivery
+  ✓ Message persistence
+  ✓ Horizontal scalability
+  ✓ High availability (clustering)
+  ✓ Acknowledgment tracking
+  ✓ Dead letter queue support
+  ✓ Message replay capability
+  
+  Better than Redis Streams for
+  enterprise job queuing
+end note
+
+note bottom of UC6
+  **Circuit Breaker Pattern:**
+  
+  Prevents cascading failures
+  when external systems are down
+  
+  States:
+  CLOSED → OPEN → HALF-OPEN → CLOSED
+  
+  Benefits:
+  - Fast failure
+  - Resource conservation
+  - Automatic recovery
+  - System stability
+end note
+
+note bottom of UC7
+  **Graceful Shutdown:**
+  
+  Ensures no job loss during:
+  - Deployments
+  - Scaling operations
+  - Node failures
+  - Maintenance windows
+  
+  Kubernetes integration:
+  - PreStop hook
+  - Termination grace period: 60s
+  - Health check endpoints
+end note
+
+@enduml

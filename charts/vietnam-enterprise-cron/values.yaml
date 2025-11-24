@@ -1,0 +1,379 @@
+# Default values for vietnam-enterprise-cron
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Image configuration
+image:
+  registry: docker.io
+  repository: vietnam-enterprise/cron-system
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# Scheduler component
+scheduler:
+  enabled: true
+  replicaCount: 3
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  
+  nodeSelector: {}
+  tolerations: []
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - scheduler
+            topologyKey: kubernetes.io/hostname
+  
+  config:
+    pollIntervalSeconds: 10
+    lockTtlSeconds: 30
+
+# Worker component
+worker:
+  enabled: true
+  replicaCount: 2
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  
+  config:
+    concurrency: 10
+    maxRetries: 10
+    timeoutSeconds: 300
+  
+  # Horizontal Pod Autoscaler
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# API component
+api:
+  enabled: true
+  replicaCount: 2
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  
+  service:
+    type: ClusterIP
+    port: 8080
+    metricsPort: 9090
+    annotations: {}
+  
+  ingress:
+    enabled: false
+    className: "nginx"
+    annotations: {}
+      # cert-manager.io/cluster-issuer: letsencrypt-prod
+      # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: cron.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+      # - secretName: cron-tls
+      #   hosts:
+      #     - cron.example.com
+  
+  # Horizontal Pod Autoscaler
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# Authentication configuration
+auth:
+  mode: database  # database or keycloak
+  jwtSecret: ""  # Required for database mode, will be generated if empty
+  jwtExpiryHours: 24
+  
+  # Keycloak configuration (only used if mode=keycloak)
+  keycloak:
+    serverUrl: ""
+    realm: ""
+    clientId: ""
+
+# Observability configuration
+observability:
+  logLevel: info
+  metricsEnabled: true
+  tracingEnabled: false
+  tracingEndpoint: ""
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  auth:
+    username: cronuser
+    password: cronpass
+    database: vietnam_cron
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+  readReplicas:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+
+# External PostgreSQL (if postgresql.enabled=false)
+externalPostgresql:
+  host: ""
+  port: 5432
+  username: cronuser
+  password: ""
+  database: vietnam_cron
+  sslMode: require
+
+# Redis configuration
+redis:
+  enabled: true
+  architecture: replication
+  auth:
+    enabled: true
+    password: redispass
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+# External Redis (if redis.enabled=false)
+externalRedis:
+  host: ""
+  port: 6379
+  password: ""
+
+# NATS configuration
+nats:
+  enabled: true
+  nats:
+    jetstream:
+      enabled: true
+      memStorage:
+        enabled: true
+        size: 1Gi
+      fileStorage:
+        enabled: true
+        size: 10Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 200m
+        memory: 256Mi
+  cluster:
+    enabled: true
+    replicas: 3
+
+# External NATS (if nats.enabled=false)
+externalNats:
+  url: ""
+
+# MinIO configuration
+minio:
+  enabled: true
+  mode: standalone  # standalone or distributed
+  rootUser: minioadmin
+  rootPassword: minioadmin
+  persistence:
+    enabled: true
+    size: 50Gi
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  buckets:
+    - name: vietnam-cron
+      policy: none
+      purge: false
+
+# External MinIO (if minio.enabled=false)
+externalMinio:
+  endpoint: ""
+  accessKey: ""
+  secretKey: ""
+  bucketName: vietnam-cron
+  useSSL: true
+
+# ServiceAccount configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress
+
+# ConfigMap for application configuration
+configMap:
+  create: true
+  data: {}
+
+# Secrets
+secrets:
+  create: true
+  data: {}
+
+# Init containers for database migrations
+initContainers:
+  runMigrations: true
+  image:
+    registry: docker.io
+    repository: vietnam-enterprise/cron-system
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+
+# Monitoring
+monitoring:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+  
+  prometheusRule:
+    enabled: false
+    rules: []
+
+# Extra environment variables
+extraEnvVars: []
+# - name: CUSTOM_VAR
+#   value: "custom_value"
+
+# Extra environment variables from ConfigMaps or Secrets
+extraEnvVarsSecret: ""
+extraEnvVarsConfigMap: ""

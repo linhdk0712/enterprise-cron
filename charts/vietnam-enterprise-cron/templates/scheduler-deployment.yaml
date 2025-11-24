@@ -1,0 +1,100 @@
+{{- if .Values.scheduler.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vietnam-cron.fullname" . }}-scheduler
+  labels:
+    {{- include "vietnam-cron.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: {{ .Values.scheduler.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vietnam-cron.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scheduler
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        {{- with .Values.scheduler.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "vietnam-cron.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scheduler
+    spec:
+      {{- with (include "vietnam-cron.imagePullSecrets" . ) }}
+      imagePullSecrets:
+        {{- . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "vietnam-cron.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.scheduler.podSecurityContext | nindent 8 }}
+      containers:
+        - name: scheduler
+          securityContext:
+            {{- toYaml .Values.scheduler.securityContext | nindent 12 }}
+          image: {{ include "vietnam-cron.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["scheduler"]
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.observability.logLevel }}
+            - name: APP_DATABASE__URL
+              value: "postgresql://{{ include "vietnam-cron.postgresql.username" . }}:$(POSTGRES_PASSWORD)@{{ include "vietnam-cron.postgresql.host" . }}:{{ include "vietnam-cron.postgresql.port" . }}/{{ include "vietnam-cron.postgresql.database" . }}"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vietnam-cron.postgresql.secretName" . }}
+                  key: password
+            - name: APP_REDIS__URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ include "vietnam-cron.redis.host" . }}:{{ include "vietnam-cron.redis.port" . }}"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vietnam-cron.redis.secretName" . }}
+                  key: password
+            - name: APP_NATS__URL
+              value: {{ include "vietnam-cron.nats.url" . }}
+            - name: APP_SCHEDULER__POLL_INTERVAL_SECONDS
+              value: {{ .Values.scheduler.config.pollIntervalSeconds | quote }}
+            - name: APP_SCHEDULER__LOCK_TTL_SECONDS
+              value: {{ .Values.scheduler.config.lockTtlSeconds | quote }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if or .Values.extraEnvVarsSecret .Values.extraEnvVarsConfigMap }}
+          envFrom:
+            {{- if .Values.extraEnvVarsSecret }}
+            - secretRef:
+                name: {{ .Values.extraEnvVarsSecret }}
+            {{- end }}
+            {{- if .Values.extraEnvVarsConfigMap }}
+            - configMapRef:
+                name: {{ .Values.extraEnvVarsConfigMap }}
+            {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "vietnam-cron.fullname" . }}
+      {{- with .Values.scheduler.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduler.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduler.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

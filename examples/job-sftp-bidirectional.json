@@ -1,0 +1,248 @@
+{
+    "name": "SFTP Bidirectional File Transfer",
+    "description": "Download files từ SFTP, xử lý, và upload kết quả trở lại",
+    "schedule": {
+        "type": "cron",
+        "expression": "0 0 3 * * *",
+        "timezone": "Asia/Ho_Chi_Minh"
+    },
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": null
+    },
+    "steps": [
+        {
+            "id": "download_invoices",
+            "name": "Download Invoice Files from Partner SFTP",
+            "type": "sftp",
+            "config": {
+                "operation": "download",
+                "host": "sftp.partner.example.com",
+                "port": 22,
+                "auth": {
+                    "type": "password",
+                    "username": "${PARTNER_SFTP_USERNAME}",
+                    "password": "${PARTNER_SFTP_PASSWORD}"
+                },
+                "remote_path": "/exports/invoices/INV_*.xlsx",
+                "options": {
+                    "wildcard_pattern": "INV_*.xlsx",
+                    "recursive": false,
+                    "verify_host_key": true,
+                    "streaming": true
+                },
+                "timeout_seconds": 300
+            }
+        },
+        {
+            "id": "process_first_invoice",
+            "name": "Process First Invoice Excel File",
+            "type": "file_processing",
+            "config": {
+                "operation": "read",
+                "format": "excel",
+                "source_path": "{{steps.download_invoices.output.files[0].path}}",
+                "options": {
+                    "sheet_name": "Invoices",
+                    "transformations": [
+                        {
+                            "type": "column_mapping",
+                            "from": "Invoice Number",
+                            "to": "invoice_number"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Customer Name",
+                            "to": "customer_name"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Total Amount",
+                            "to": "total_amount"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Invoice Date",
+                            "to": "invoice_date"
+                        },
+                        {
+                            "type": "type_conversion",
+                            "column": "total_amount",
+                            "target_type": "decimal"
+                        },
+                        {
+                            "type": "filter",
+                            "condition": "total_amount > 0"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "validate_invoices",
+            "name": "Validate Invoice Data via API",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/invoices/validate",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"invoices\": {{steps.process_first_invoice.output.data}}}",
+                "timeout_seconds": 60
+            }
+        },
+        {
+            "id": "save_invoices",
+            "name": "Save Valid Invoices to Database",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "INSERT INTO invoices (invoice_number, customer_name, total_amount, invoice_date, source_file, imported_at) SELECT invoice_number, customer_name, total_amount, invoice_date::date, $1, NOW() FROM json_populate_recordset(null::invoices, $2::json) ON CONFLICT (invoice_number) DO UPDATE SET total_amount = EXCLUDED.total_amount, updated_at = NOW()",
+                "parameters": [
+                    "{{steps.download_invoices.output.files[0].filename}}",
+                    "{{steps.validate_invoices.response.body.valid_invoices}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 120
+            }
+        },
+        {
+            "id": "generate_processing_report",
+            "name": "Generate Processing Report",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "SELECT invoice_number, customer_name, total_amount, invoice_date, 'PROCESSED' as status FROM invoices WHERE imported_at::date = CURRENT_DATE ORDER BY invoice_date DESC",
+                "parameters": [],
+                "query_type": "raw_sql",
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "create_processing_report_excel",
+            "name": "Create Processing Report Excel",
+            "type": "file_processing",
+            "config": {
+                "operation": "write",
+                "format": "excel",
+                "destination_path": "reports/invoice_processing_{{execution_date}}.xlsx",
+                "data_source": "{{steps.generate_processing_report.output.rows}}",
+                "options": {
+                    "sheet_name": "Processed Invoices"
+                }
+            }
+        },
+        {
+            "id": "upload_report_to_partner",
+            "name": "Upload Processing Report to Partner SFTP",
+            "type": "sftp",
+            "config": {
+                "operation": "upload",
+                "host": "sftp.partner.example.com",
+                "port": 22,
+                "auth": {
+                    "type": "ssh_key",
+                    "username": "${PARTNER_SFTP_USERNAME}",
+                    "private_key_path": "/secrets/partner_sftp_key"
+                },
+                "local_path": "{{steps.create_processing_report_excel.output.files[0].path}}",
+                "remote_path": "/imports/reports/",
+                "options": {
+                    "create_directories": true,
+                    "verify_host_key": true
+                },
+                "timeout_seconds": 120
+            }
+        },
+        {
+            "id": "create_summary_csv",
+            "name": "Create Summary CSV for Internal Use",
+            "type": "file_processing",
+            "config": {
+                "operation": "write",
+                "format": "csv",
+                "destination_path": "reports/invoice_summary_{{execution_date}}.csv",
+                "data_source": "{{steps.generate_processing_report.output.rows}}",
+                "options": {
+                    "delimiter": ","
+                }
+            }
+        },
+        {
+            "id": "upload_summary_to_internal_sftp",
+            "name": "Upload Summary to Internal SFTP",
+            "type": "sftp",
+            "config": {
+                "operation": "upload",
+                "host": "sftp.internal.example.com",
+                "port": 22,
+                "auth": {
+                    "type": "password",
+                    "username": "${INTERNAL_SFTP_USERNAME}",
+                    "password": "${INTERNAL_SFTP_PASSWORD}"
+                },
+                "local_path": "{{steps.create_summary_csv.output.files[0].path}}",
+                "remote_path": "/finance/invoices/",
+                "options": {
+                    "create_directories": true,
+                    "verify_host_key": false
+                },
+                "timeout_seconds": 60
+            }
+        },
+        {
+            "id": "send_completion_notification",
+            "name": "Send Completion Notification",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/notifications",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"message\": \"Invoice processing completed\", \"files_downloaded\": {{steps.download_invoices.output.file_count}}, \"invoices_processed\": {{steps.save_invoices.output.affected_rows}}, \"report_uploaded_to_partner\": \"{{steps.upload_report_to_partner.output.remote_path}}\", \"summary_uploaded_internal\": \"{{steps.upload_summary_to_internal_sftp.output.remote_path}}\"}",
+                "timeout_seconds": 10
+            }
+        }
+    ],
+    "timeout_seconds": 1200,
+    "max_retries": 2,
+    "allow_concurrent": false,
+    "enabled": true,
+    "notes": {
+        "description": "Ví dụ về SFTP bidirectional transfer với file processing",
+        "sftp_features": [
+            "Download với wildcard patterns (INV_*.xlsx)",
+            "Upload với SSH key authentication",
+            "Upload với password authentication",
+            "Automatic directory creation",
+            "Host key verification",
+            "Streaming for large files"
+        ],
+        "workflow": [
+            "1. Download invoice files từ partner SFTP (wildcard pattern)",
+            "2. Process Excel file với transformations",
+            "3. Validate data via API",
+            "4. Save to database",
+            "5. Generate processing report",
+            "6. Create Excel report và upload to partner SFTP",
+            "7. Create CSV summary và upload to internal SFTP",
+            "8. Send notification"
+        ],
+        "authentication_types": {
+            "password": "username + password",
+            "ssh_key": "username + private_key_path"
+        },
+        "file_references": {
+            "downloaded_file": "{{steps.download_invoices.output.files[0].path}}",
+            "downloaded_filename": "{{steps.download_invoices.output.files[0].filename}}",
+            "uploaded_path": "{{steps.upload_report_to_partner.output.remote_path}}"
+        }
+    }
+}

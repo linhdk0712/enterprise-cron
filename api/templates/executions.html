@@ -1,0 +1,168 @@
+{% extends "layout.html" %}
+
+{% block title %}Executions - Vietnam Enterprise Cron{% endblock %}
+
+{% block content %}
+<div class="card" hx-get="/dashboard/executions" hx-trigger="sse:execution_status_changed" hx-select=".card"
+    hx-swap="outerHTML">
+    <div class="card-header">
+        <h2>Execution History</h2>
+        <div style="display: flex; gap: 0.5rem;">
+            <select id="status-filter" onchange="filterExecutions()" style="width: auto;">
+                <option value="">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="Running">Running</option>
+                <option value="Success">Success</option>
+                <option value="Failed">Failed</option>
+                <option value="Timeout">Timeout</option>
+                <option value="DeadLetter">Dead Letter</option>
+            </select>
+        </div>
+    </div>
+
+    {% if executions %}
+    <table>
+        <thead>
+            <tr>
+                <th>Execution ID</th>
+                <th>Job Name</th>
+                <th>Status</th>
+                <th>Trigger Source</th>
+                <th>Started At</th>
+                <th>Duration</th>
+                <th>Attempt</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for execution in executions %}
+            <tr>
+                <td><code style="font-size: 0.85rem;">{{ execution.id | truncate(length=8, end="...") }}</code></td>
+                <td>
+                    <a href="/dashboard/jobs/{{ execution.job_id }}" hx-get="/dashboard/jobs/{{ execution.job_id }}"
+                        hx-target="#main-content" hx-push-url="true" style="color: #3498db; text-decoration: none;">
+                        {{ execution.job_name | default(value="Unknown") }}
+                    </a>
+                </td>
+                <td>
+                    {% if execution.status == "Success" %}
+                    <span class="badge badge-success">Success</span>
+                    {% elif execution.status == "Failed" %}
+                    <span class="badge badge-danger">Failed</span>
+                    {% elif execution.status == "Running" %}
+                    <span class="badge badge-info">Running</span>
+                    {% elif execution.status == "Pending" %}
+                    <span class="badge badge-warning">Pending</span>
+                    {% elif execution.status == "Timeout" %}
+                    <span class="badge badge-danger">Timeout</span>
+                    {% elif execution.status == "DeadLetter" %}
+                    <span class="badge badge-danger">Dead Letter</span>
+                    {% else %}
+                    <span class="badge badge-secondary">{{ execution.status }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if execution.trigger_source == "Scheduled" %}
+                    <span class="badge badge-info">⏰ Scheduled</span>
+                    {% elif execution.trigger_source == "Manual" %}
+                    <span class="badge badge-info">👤 Manual</span>
+                    {% elif execution.trigger_source == "Webhook" %}
+                    <span class="badge badge-info">🔗 Webhook</span>
+                    {% else %}
+                    <span class="badge badge-secondary">{{ execution.trigger_source }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if execution.started_at %}
+                    <small>{{ execution.started_at }}</small>
+                    {% else %}
+                    <small>-</small>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if execution.completed_at and execution.started_at %}
+                    {% set duration_seconds = (execution.completed_at - execution.started_at) | int %}
+                    {% if duration_seconds < 60 %} <small>{{ duration_seconds }}s</small>
+                        {% elif duration_seconds < 3600 %} <small>{{ (duration_seconds / 60) | round(1) }}m</small>
+                            {% else %}
+                            <small>{{ (duration_seconds / 3600) | round(1) }}h</small>
+                            {% endif %}
+                            {% elif execution.status == "Running" %}
+                            <small class="badge badge-info">Running...</small>
+                            {% else %}
+                            <small>-</small>
+                            {% endif %}
+                </td>
+                <td>
+                    {% if execution.attempt > 1 %}
+                    <span class="badge badge-warning">{{ execution.attempt }}</span>
+                    {% else %}
+                    {{ execution.attempt }}
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="showExecutionDetails('{{ execution.id }}')">
+                        Details
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if has_more %}
+    <div style="text-align: center; margin-top: 1rem;">
+        <button class="btn btn-secondary" hx-get="/dashboard/executions?offset={{ offset + limit }}&limit={{ limit }}"
+            hx-target="tbody" hx-swap="beforeend">
+            Load More
+        </button>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
+        <h3>No executions found</h3>
+        <p>Execution history will appear here once jobs start running</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Execution Details Modal (placeholder) -->
+<div id="execution-modal"
+    style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; padding: 2rem;">
+    <div
+        style="max-width: 800px; margin: 0 auto; background: white; border-radius: 8px; padding: 2rem; max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2>Execution Details</h2>
+            <button onclick="closeExecutionDetails()"
+                style="border: none; background: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
+        </div>
+        <div id="execution-details-content">
+            Loading...
+        </div>
+    </div>
+</div>
+
+<script>
+    function filterExecutions() {
+        const status = document.getElementById('status-filter').value;
+        const url = status ? `/dashboard/executions?status=${status}` : '/dashboard/executions';
+        htmx.ajax('GET', url, { target: '#main-content', swap: 'innerHTML' });
+    }
+
+    function showExecutionDetails(executionId) {
+        document.getElementById('execution-modal').style.display = 'block';
+        htmx.ajax('GET', `/api/executions/${executionId}`, {
+            target: '#execution-details-content',
+            swap: 'innerHTML'
+        });
+    }
+
+    function closeExecutionDetails() {
+        document.getElementById('execution-modal').style.display = 'none';
+    }
+</script>
+{% endblock %}

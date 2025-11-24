@@ -1,0 +1,404 @@
+@startuml Monitoring & Observability Use Cases - Detailed
+
+title Monitoring & Observability - Detailed Use Cases
+
+actor "DevOps Engineer" as DevOps
+actor "System Administrator" as Admin
+actor "Worker Process" as Worker
+actor "Scheduler Process" as Scheduler
+actor "API Server" as API
+actor "Prometheus" as Prometheus
+actor "Grafana" as Grafana
+actor "Jaeger/OpenTelemetry" as Tracing
+
+rectangle "Monitoring & Observability Subsystem" {
+  
+  usecase "View Execution History" as UC1 {
+    --
+    **Query Parameters:**
+    - Time range (default: last 30 days)
+    - Job ID filter
+    - Status filter
+    - Pagination
+    
+    **Display:**
+    - Execution ID
+    - Job name
+    - Status
+    - Start/completion time
+    - Duration
+    - Result/error
+    --
+    **Validates:** Req 6.2, 6.3
+  }
+  
+  usecase "View Job Statistics" as UC2 {
+    --
+    **Statistics per Job:**
+    - Total executions
+    - Successful executions
+    - Failed executions
+    - Success rate (%)
+    - Last execution time
+    - Last success time
+    - Last failure time
+    - Consecutive failures
+    - Average duration
+    --
+    **Validates:** Req 6.1
+  }
+  
+  usecase "View Real-time Updates" as UC3 {
+    --
+    **Server-Sent Events (SSE):**
+    1. Client subscribes to SSE endpoint
+    2. Server pushes updates on changes
+    3. Updates within 1 second
+    4. No polling required
+    
+    **Events:**
+    - Job status change
+    - Execution started
+    - Execution completed
+    - Job enabled/disabled
+    --
+    **Validates:** Req 6.7
+  }
+  
+  usecase "Generate Structured Logs" as UC4 {
+    --
+    **Log Format: JSON**
+    {
+      "timestamp": "2025-01-20T10:30:00Z",
+      "level": "info",
+      "message": "Job execution started",
+      "job_id": "uuid",
+      "execution_id": "uuid",
+      "trace_id": "trace-id",
+      "span_id": "span-id"
+    }
+    --
+    **Validates:** Req 5.1, 5.2, 5.9
+  }
+  
+  usecase "Log Execution Start" as UC4_1 {
+    --
+    **Log Entry:**
+    - Event: execution_started
+    - job_id
+    - execution_id
+    - timestamp
+    - job_type
+    - attempt_number
+    --
+    **Validates:** Req 5.1
+  }
+  
+  usecase "Log Execution Completion" as UC4_2 {
+    --
+    **Log Entry:**
+    - Event: execution_completed
+    - job_id
+    - execution_id
+    - status (Success/Failed/Timeout)
+    - duration_ms
+    - timestamp
+    --
+    **Validates:** Req 5.2
+  }
+  
+  usecase "Export Prometheus Metrics" as UC5 {
+    --
+    **Metrics Endpoint:** /metrics
+    
+    **Exposed Metrics:**
+    - Counters (success, failures)
+    - Histograms (duration)
+    - Gauges (queue size, active workers)
+    --
+    **Validates:** Req 5.3-5.6
+  }
+  
+  usecase "Increment Success Counter" as UC5_1 {
+    --
+    **Metric:**
+    job_success_total{
+      job_id="uuid",
+      job_name="daily-report"
+    }
+    
+    Incremented on each successful execution
+    --
+    **Validates:** Req 5.3
+  }
+  
+  usecase "Increment Failure Counter" as UC5_2 {
+    --
+    **Metric:**
+    job_failed_total{
+      job_id="uuid",
+      job_name="daily-report",
+      reason="timeout|error|circuit_breaker"
+    }
+    
+    Incremented on each failed execution
+    --
+    **Validates:** Req 5.4
+  }
+  
+  usecase "Record Duration Histogram" as UC5_3 {
+    --
+    **Metric:**
+    job_duration_seconds{
+      job_id="uuid",
+      job_name="daily-report"
+    }
+    
+    Records execution duration
+    Buckets: 0.1, 0.5, 1, 5, 10, 30, 60, 300
+    --
+    **Validates:** Req 5.5
+  }
+  
+  usecase "Expose Queue Size Gauge" as UC5_4 {
+    --
+    **Metric:**
+    job_queue_size{}
+    
+    Current number of jobs in NATS queue
+    Updated in real-time
+    --
+    **Validates:** Req 5.6
+  }
+  
+  usecase "Generate OpenTelemetry Traces" as UC6 {
+    --
+    **Trace Span:**
+    - Span name: job_execution
+    - Attributes:
+      - job_id
+      - execution_id
+      - job_type
+      - status
+      - duration
+    - Parent span: scheduler or manual trigger
+    --
+    **Validates:** Req 5.7
+  }
+  
+  usecase "Create Execution Trace Span" as UC6_1 {
+    --
+    **Span Hierarchy:**
+    
+    scheduler_poll (root)
+      └─ job_execution
+           ├─ variable_resolution
+           ├─ http_request (or db_query)
+           └─ result_persistence
+    
+    Distributed tracing across components
+    --
+    **Validates:** Req 5.7
+  }
+  
+  usecase "Trigger Alerts" as UC7 {
+    --
+    **Alert Conditions:**
+    1. Job fails 3 consecutive times
+    2. Queue depth > threshold
+    3. Execution time > timeout
+    4. Circuit breaker opens
+    5. Database connection failures
+    --
+    **Validates:** Req 5.8
+  }
+  
+  usecase "Alert on Consecutive Failures" as UC7_1 {
+    --
+    **Alert Rule:**
+    IF consecutive_failures >= 3
+    THEN send alert
+    
+    **Alert Details:**
+    - Job ID and name
+    - Failure count
+    - Last error message
+    - Timestamp
+    --
+    **Validates:** Req 5.8
+  }
+  
+  usecase "Visualize Metrics in Grafana" as UC8 {
+    --
+    **Dashboards:**
+    1. Job Execution Overview
+       - Success rate
+       - Throughput
+       - Duration percentiles
+    
+    2. System Health
+       - Queue depth
+       - Worker utilization
+       - Error rates
+    
+    3. Distributed Lock Contention
+       - Lock acquisition time
+       - Lock failures
+    --
+  }
+  
+  usecase "Query Traces in Jaeger" as UC9 {
+    --
+    **Trace Queries:**
+    - Find traces by job_id
+    - Find slow executions
+    - Analyze failure traces
+    - View distributed call graph
+    --
+  }
+  
+  usecase "Audit Log User Operations" as UC10 {
+    --
+    **Audit Log Entry:**
+    {
+      "timestamp": "2025-01-20T10:30:00Z",
+      "user_id": "uuid",
+      "username": "admin",
+      "operation": "create_job",
+      "resource_type": "job",
+      "resource_id": "uuid",
+      "result": "success",
+      "ip_address": "192.168.1.100"
+    }
+    --
+    **Validates:** Req 10.10
+  }
+}
+
+' DevOps relationships
+DevOps --> UC1
+DevOps --> UC2
+DevOps --> UC3
+DevOps --> UC5
+DevOps --> UC7
+DevOps --> UC8
+DevOps --> UC9
+
+' Admin relationships
+Admin --> UC1
+Admin --> UC2
+Admin --> UC3
+
+' Worker relationships
+Worker --> UC4
+Worker --> UC5
+Worker --> UC6
+Worker --> UC10
+
+' Scheduler relationships
+Scheduler --> UC4
+Scheduler --> UC5
+Scheduler --> UC6
+
+' API relationships
+API --> UC4
+API --> UC10
+
+' External system relationships
+UC5 --> Prometheus : <<scrapes>>
+UC8 --> Grafana : <<visualizes in>>
+UC6 --> Tracing : <<sends to>>
+UC9 --> Tracing : <<queries>>
+UC7 --> Prometheus : <<triggers via>>
+
+' Include/Extend relationships
+UC4 ..> UC4_1 : <<extend>>
+UC4 ..> UC4_2 : <<extend>>
+
+UC5 ..> UC5_1 : <<include>>
+UC5 ..> UC5_2 : <<include>>
+UC5 ..> UC5_3 : <<include>>
+UC5 ..> UC5_4 : <<include>>
+
+UC6 ..> UC6_1 : <<include>>
+
+UC7 ..> UC7_1 : <<include>>
+
+' Notes
+note right of UC4
+  **Structured Logging:**
+  
+  ✓ JSON format for machine parsing
+  ✓ Trace context (trace_id, span_id)
+  ✓ Consistent field names
+  ✓ Log levels: debug, info, warn, error
+  ✓ No PII in logs
+  
+  Integration with:
+  - ELK Stack (Elasticsearch, Logstash, Kibana)
+  - Loki (Grafana)
+  - CloudWatch Logs
+end note
+
+note right of UC5
+  **Prometheus Metrics:**
+  
+  Counter: Monotonically increasing
+  - job_success_total
+  - job_failed_total
+  
+  Histogram: Distribution of values
+  - job_duration_seconds
+  
+  Gauge: Current value
+  - job_queue_size
+  - worker_active_executions
+  
+  Scrape interval: 15 seconds
+end note
+
+note bottom of UC6
+  **OpenTelemetry Tracing:**
+  
+  Benefits:
+  - Distributed tracing across services
+  - Performance bottleneck identification
+  - Error propagation tracking
+  - Service dependency mapping
+  
+  Exporters:
+  - Jaeger
+  - Zipkin
+  - AWS X-Ray
+  - Google Cloud Trace
+end note
+
+note bottom of UC7
+  **Alert Channels:**
+  
+  - Email
+  - Slack
+  - PagerDuty
+  - Webhook
+  - SMS (via Twilio)
+  
+  Alert severity levels:
+  - Warning (3 failures)
+  - Critical (5+ failures)
+  - Emergency (system down)
+end note
+
+note bottom of UC8
+  **Grafana Dashboards:**
+  
+  Key Visualizations:
+  - Time series graphs (throughput, latency)
+  - Heatmaps (duration distribution)
+  - Gauges (success rate)
+  - Tables (recent failures)
+  - Alerts (active incidents)
+  
+  Auto-refresh: 30 seconds
+end note
+
+@enduml

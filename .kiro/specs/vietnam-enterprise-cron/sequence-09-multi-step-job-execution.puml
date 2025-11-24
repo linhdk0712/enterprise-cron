@@ -1,0 +1,346 @@
+@startuml Multi-Step Job Execution with MinIO
+
+title Multi-Step Job Execution - Job Context and Data Passing
+
+actor "System Administrator" as Admin
+participant "API Server" as API
+participant "MinIO\n(Object Storage)" as MinIO
+participant "PostgreSQL\n(System DB)" as DB
+participant "Scheduler" as Scheduler
+participant "Worker Process" as Worker
+participant "Job Context Manager" as ContextMgr
+participant "Step Executor" as StepExec
+participant "External API" as ExternalAPI
+participant "Target Database" as TargetDB
+
+== Job Definition Creation ==
+
+Admin -> API: POST /api/jobs\nBody: JSON job definition
+activate Admin
+activate API
+
+note over API
+  **Job Definition JSON:**
+  {
+    "name": "user-data-sync",
+    "schedule": {
+      "type": "Cron",
+      "expression": "0 0 2 * * *",
+      "timezone": "Asia/Ho_Chi_Minh"
+    },
+    "steps": [
+      {
+        "id": "step1",
+        "name": "fetch-users",
+        "type": "HttpRequest",
+        "config": {
+          "method": "GET",
+          "url": "https://api.example.com/users?status=active",
+          "headers": {"Authorization": "Bearer {{api_token}}"}
+        }
+      },
+      {
+        "id": "step2",
+        "name": "process-users",
+        "type": "DatabaseQuery",
+        "config": {
+          "database_type": "PostgreSQL",
+          "connection_string": "postgresql://{{db_user}}:{{db_pass}}@{{db_host}}/{{db_name}}",
+          "query": "INSERT INTO users (id, name, email) VALUES {{steps.step1.response.data}}"
+        }
+      },
+      {
+        "id": "step3",
+        "name": "send-notification",
+        "type": "HttpRequest",
+        "config": {
+          "method": "POST",
+          "url": "https://notification.example.com/send",
+          "body": {
+            "message": "Synced {{steps.step1.response.total}} users",
+            "inserted": "{{steps.step2.rows_affected}}"
+          }
+        }
+      }
+    ],
+    "timeout_seconds": 600,
+    "max_retries": 3
+  }
+end note
+
+API -> API: Validate JSON schema
+API -> API: Generate job_id (UUID)
+
+API -> MinIO: PUT jobs/{job_id}/definition.json\nBody: Job definition JSON
+activate MinIO
+MinIO --> API: Object stored\nETag: "abc123..."
+deactivate MinIO
+
+API -> DB: INSERT INTO jobs\n(id, name, schedule_type, schedule_config,\n minio_definition_path, enabled, ...)\nVALUES (job_id, 'user-data-sync', 'Cron', {...},\n 'jobs/{job_id}/definition.json', true, ...)
+activate DB
+DB --> API: Job metadata created
+deactivate DB
+
+API --> Admin: 201 Created\n{\n  "job_id": "550e8400-...",\n  "definition_path": "jobs/550e8400-.../definition.json"\n}
+deactivate API
+deactivate Admin
+
+== Job Scheduling ==
+
+Scheduler -> DB: SELECT * FROM jobs WHERE enabled = true AND next_run_time <= NOW()
+activate Scheduler
+activate DB
+DB --> Scheduler: Job: user-data-sync (job_id: 550e8400-...)
+deactivate DB
+
+Scheduler -> Scheduler: Acquire distributed lock (Redis RedLock)
+Scheduler -> Scheduler: Generate execution_id and idempotency_key
+
+Scheduler -> DB: INSERT INTO job_executions\n(id, job_id, idempotency_key, status)\nVALUES (execution_id, job_id, idem_key, 'Pending')
+activate DB
+DB --> Scheduler: Execution created
+deactivate DB
+
+Scheduler -> Scheduler: Publish to NATS queue
+deactivate Scheduler
+
+== Multi-Step Job Execution ==
+
+Worker -> Worker: Consume job from NATS queue
+activate Worker
+
+Worker -> DB: SELECT minio_definition_path FROM jobs WHERE id = job_id
+activate DB
+DB --> Worker: minio_definition_path: "jobs/550e8400-.../definition.json"
+deactivate DB
+
+Worker -> MinIO: GET jobs/550e8400-.../definition.json
+activate MinIO
+MinIO --> Worker: Job definition JSON (with 3 steps)
+deactivate MinIO
+
+Worker -> ContextMgr: Initialize Job Context
+activate ContextMgr
+
+ContextMgr -> ContextMgr: Create empty context:\n{\n  "job_id": "550e8400-...",\n  "execution_id": "exec-uuid",\n  "started_at": "2025-01-20T02:00:00Z",\n  "steps": {},\n  "variables": {...}\n}
+
+ContextMgr --> Worker: Job Context initialized
+deactivate ContextMgr
+
+== Step 1: Fetch Users (HTTP Request) ==
+
+Worker -> StepExec: Execute step1: fetch-users
+activate StepExec
+
+StepExec -> ContextMgr: Load Job Context
+activate ContextMgr
+ContextMgr --> StepExec: Current context (empty steps)
+deactivate ContextMgr
+
+StepExec -> StepExec: Resolve variables:\nurl: https://api.example.com/users?status=active\nheader: Authorization: Bearer {actual_token}
+
+StepExec -> ExternalAPI: GET /users?status=active\nAuthorization: Bearer {token}
+activate ExternalAPI
+ExternalAPI --> StepExec: 200 OK\n{\n  "data": [\n    {"id": 1, "name": "John", "email": "john@example.com"},\n    {"id": 2, "name": "Jane", "email": "jane@example.com"}\n  ],\n  "total": 2\n}
+deactivate ExternalAPI
+
+StepExec -> ContextMgr: Store step1 output in Job Context
+activate ContextMgr
+
+ContextMgr -> ContextMgr: Update context:\n{\n  "steps": {\n    "step1": {\n      "id": "step1",\n      "name": "fetch-users",\n      "status": "Success",\n      "started_at": "2025-01-20T02:00:01Z",\n      "completed_at": "2025-01-20T02:00:02Z",\n      "response": {\n        "status_code": 200,\n        "headers": {...},\n        "data": [\n          {"id": 1, "name": "John", "email": "john@example.com"},\n          {"id": 2, "name": "Jane", "email": "jane@example.com"}\n        ],\n        "total": 2\n      }\n    }\n  }\n}
+
+ContextMgr -> MinIO: PUT jobs/550e8400-.../executions/exec-uuid/context.json\nBody: Updated Job Context
+activate MinIO
+MinIO --> ContextMgr: Object stored
+deactivate MinIO
+
+ContextMgr --> StepExec: Context updated and persisted
+deactivate ContextMgr
+
+StepExec --> Worker: Step1 completed successfully
+deactivate StepExec
+
+== Step 2: Process Users (Database Query) ==
+
+Worker -> StepExec: Execute step2: process-users
+activate StepExec
+
+StepExec -> MinIO: GET jobs/550e8400-.../executions/exec-uuid/context.json
+activate MinIO
+MinIO --> StepExec: Job Context (with step1 output)
+deactivate MinIO
+
+StepExec -> StepExec: Resolve step reference:\n{{steps.step1.response.data}}\n→ [\n  {"id": 1, "name": "John", "email": "john@example.com"},\n  {"id": 2, "name": "Jane", "email": "jane@example.com"}\n]
+
+StepExec -> StepExec: Build parameterized query:\nINSERT INTO users (id, name, email)\nVALUES ($1, $2, $3), ($4, $5, $6)\nParams: [1, "John", "john@example.com", 2, "Jane", "jane@example.com"]
+
+StepExec -> TargetDB: Execute INSERT query with parameters
+activate TargetDB
+TargetDB --> StepExec: Query result:\n{\n  "rows_affected": 2,\n  "execution_time": 0.15\n}
+deactivate TargetDB
+
+StepExec -> ContextMgr: Store step2 output in Job Context
+activate ContextMgr
+
+ContextMgr -> ContextMgr: Update context:\n{\n  "steps": {\n    "step1": {...},\n    "step2": {\n      "id": "step2",\n      "name": "process-users",\n      "status": "Success",\n      "started_at": "2025-01-20T02:00:03Z",\n      "completed_at": "2025-01-20T02:00:03Z",\n      "result": {\n        "rows_affected": 2,\n        "execution_time": 0.15\n      }\n    }\n  }\n}
+
+ContextMgr -> MinIO: PUT jobs/550e8400-.../executions/exec-uuid/context.json\nBody: Updated Job Context
+activate MinIO
+MinIO --> ContextMgr: Object stored
+deactivate MinIO
+
+ContextMgr --> StepExec: Context updated and persisted
+deactivate ContextMgr
+
+StepExec --> Worker: Step2 completed successfully
+deactivate StepExec
+
+== Step 3: Send Notification (HTTP Request) ==
+
+Worker -> StepExec: Execute step3: send-notification
+activate StepExec
+
+StepExec -> MinIO: GET jobs/550e8400-.../executions/exec-uuid/context.json
+activate MinIO
+MinIO --> StepExec: Job Context (with step1 and step2 outputs)
+deactivate MinIO
+
+StepExec -> StepExec: Resolve step references:\n{{steps.step1.response.total}} → 2\n{{steps.step2.rows_affected}} → 2\n\nBody:\n{\n  "message": "Synced 2 users",\n  "inserted": 2\n}
+
+StepExec -> ExternalAPI: POST /send\nBody: {"message": "Synced 2 users", "inserted": 2}
+activate ExternalAPI
+ExternalAPI --> StepExec: 200 OK\n{"notification_id": "notif-123", "sent": true}
+deactivate ExternalAPI
+
+StepExec -> ContextMgr: Store step3 output in Job Context
+activate ContextMgr
+
+ContextMgr -> ContextMgr: Update context:\n{\n  "steps": {\n    "step1": {...},\n    "step2": {...},\n    "step3": {\n      "id": "step3",\n      "name": "send-notification",\n      "status": "Success",\n      "started_at": "2025-01-20T02:00:04Z",\n      "completed_at": "2025-01-20T02:00:05Z",\n      "response": {\n        "status_code": 200,\n        "data": {"notification_id": "notif-123", "sent": true}\n      }\n    }\n  },\n  "completed_at": "2025-01-20T02:00:05Z",\n  "status": "Success"\n}
+
+ContextMgr -> MinIO: PUT jobs/550e8400-.../executions/exec-uuid/context.json\nBody: Final Job Context
+activate MinIO
+MinIO --> ContextMgr: Object stored (final version)
+deactivate MinIO
+
+ContextMgr --> StepExec: Context finalized and persisted
+deactivate ContextMgr
+
+StepExec --> Worker: Step3 completed successfully
+deactivate StepExec
+
+== Finalize Execution ==
+
+Worker -> DB: UPDATE job_executions\nSET status = 'Success',\ncompleted_at = NOW(),\nminio_context_path = 'jobs/550e8400-.../executions/exec-uuid/context.json'\nWHERE id = execution_id
+activate DB
+DB --> Worker: Execution updated
+deactivate DB
+
+Worker -> Worker: ACK NATS message
+Worker -> Worker: Emit metrics and logs
+
+deactivate Worker
+
+== Step Failure Handling ==
+
+note over Worker, MinIO
+  **If a step fails:**
+  
+  1. Worker stores error in Job Context:
+     {
+       "steps": {
+         "step2": {
+           "status": "Failed",
+           "error": "Database connection timeout",
+           "error_details": {...}
+         }
+       }
+     }
+  
+  2. Worker persists Job Context to MinIO (partial execution)
+  
+  3. Worker updates job_executions status to 'Failed'
+  
+  4. Retry logic applies (exponential backoff)
+  
+  5. On retry, Worker loads Job Context from MinIO
+  
+  6. Worker can resume from failed step or restart entire job
+     (configurable per job definition)
+  
+  **Job Context preserved for debugging!**
+end note
+
+== Query Execution Details ==
+
+Admin -> API: GET /api/jobs/{job_id}/executions/{execution_id}
+activate Admin
+activate API
+
+API -> DB: SELECT * FROM job_executions WHERE id = execution_id
+activate DB
+DB --> API: Execution record:\n{\n  "status": "Success",\n  "minio_context_path": "jobs/550e8400-.../executions/exec-uuid/context.json"\n}
+deactivate DB
+
+API --> Admin: 200 OK\n{\n  "execution_id": "exec-uuid",\n  "status": "Success",\n  "context_path": "jobs/550e8400-.../executions/exec-uuid/context.json",\n  "download_url": "https://minio.example.com/jobs/550e8400-.../executions/exec-uuid/context.json?token=..."\n}
+deactivate API
+
+Admin -> MinIO: GET jobs/550e8400-.../executions/exec-uuid/context.json\n(via pre-signed URL)
+activate MinIO
+MinIO --> Admin: Full Job Context JSON (all step outputs)
+deactivate MinIO
+
+deactivate Admin
+
+== Data Separation ==
+
+note over DB, MinIO
+  **Data Storage Strategy:**
+  
+  **PostgreSQL (System Database):**
+  - Job metadata (id, name, schedule, enabled)
+  - MinIO path references only
+  - Execution status and timing
+  - No large data objects
+  
+  **MinIO (Object Storage):**
+  - Full job definitions (JSON)
+  - Job Context objects (step outputs)
+  - Large response payloads
+  - Audit trail of all executions
+  
+  **Benefits:**
+  - Database stays small and fast
+  - Unlimited storage for job data
+  - S3-compatible (easy backup/replication)
+  - Cost-effective for large datasets
+  - Job Context owned by job, not system
+end note
+
+== JSONPath Reference Examples ==
+
+note over StepExec
+  **Step Reference Syntax:**
+  
+  Simple field:
+  {{steps.step1.response.total}}
+  → 2
+  
+  Nested object:
+  {{steps.step1.response.data[0].name}}
+  → "John"
+  
+  Array iteration (in query):
+  {{steps.step1.response.data}}
+  → [{"id": 1, ...}, {"id": 2, ...}]
+  
+  Conditional:
+  {{steps.step1.response.status_code == 200}}
+  → true
+  
+  Multiple references in template:
+  "Synced {{steps.step1.response.total}} users, 
+   inserted {{steps.step2.rows_affected}} records"
+  → "Synced 2 users, inserted 2 records"
+end note
+
+@enduml

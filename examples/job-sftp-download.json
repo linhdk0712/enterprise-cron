@@ -1,0 +1,143 @@
+{
+    "name": "Download Bank Transaction Files via SFTP",
+    "description": "Tải file giao dịch ngân hàng từ SFTP server, xử lý và lưu vào database",
+    "schedule": {
+        "type": "cron",
+        "expression": "0 0 1 * * *",
+        "timezone": "Asia/Ho_Chi_Minh",
+        "end_date": null
+    },
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": null
+    },
+    "steps": [
+        {
+            "id": "download_transaction_files",
+            "name": "Download Transaction Files from SFTP",
+            "type": "sftp",
+            "config": {
+                "operation": "download",
+                "host": "sftp.bank.example.com",
+                "port": 22,
+                "auth": {
+                    "type": "password",
+                    "username": "${SFTP_USERNAME}",
+                    "password": "${SFTP_PASSWORD}"
+                },
+                "remote_path": "/exports/transactions/TXN_*.csv",
+                "options": {
+                    "wildcard_pattern": "TXN_*.csv",
+                    "recursive": false,
+                    "verify_host_key": true,
+                    "streaming": true
+                },
+                "timeout_seconds": 300
+            }
+        },
+        {
+            "id": "process_transaction_files",
+            "name": "Process Downloaded CSV Files",
+            "type": "file_processing",
+            "config": {
+                "operation": "read",
+                "format": "csv",
+                "source_path": "{{steps.download_transaction_files.output.files[0].path}}",
+                "options": {
+                    "delimiter": ",",
+                    "transformations": [
+                        {
+                            "type": "column_mapping",
+                            "from": "Transaction ID",
+                            "to": "transaction_id"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Amount",
+                            "to": "amount"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Date",
+                            "to": "transaction_date"
+                        },
+                        {
+                            "type": "type_conversion",
+                            "column": "amount",
+                            "target_type": "decimal"
+                        },
+                        {
+                            "type": "filter",
+                            "condition": "amount > 0"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "save_transactions",
+            "name": "Save Transactions to Database",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "INSERT INTO bank_transactions (transaction_id, amount, transaction_date, source_file, imported_at) SELECT transaction_id, amount, transaction_date::date, $1, NOW() FROM json_populate_recordset(null::bank_transactions, $2::json) ON CONFLICT (transaction_id) DO NOTHING",
+                "parameters": [
+                    "{{steps.download_transaction_files.output.files[0].filename}}",
+                    "{{steps.process_transaction_files.output.data}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 120
+            }
+        },
+        {
+            "id": "generate_summary_report",
+            "name": "Generate Summary Report",
+            "type": "file_processing",
+            "config": {
+                "operation": "write",
+                "format": "excel",
+                "destination_path": "reports/transaction_summary_{{execution_id}}.xlsx",
+                "data_source": "{{steps.save_transactions.output.summary}}",
+                "options": {
+                    "sheet_name": "Transaction Summary"
+                }
+            }
+        },
+        {
+            "id": "upload_summary_to_sftp",
+            "name": "Upload Summary Report to SFTP",
+            "type": "sftp",
+            "config": {
+                "operation": "upload",
+                "host": "sftp.bank.example.com",
+                "port": 22,
+                "auth": {
+                    "type": "password",
+                    "username": "${SFTP_USERNAME}",
+                    "password": "${SFTP_PASSWORD}"
+                },
+                "local_path": "{{steps.generate_summary_report.output.files[0].path}}",
+                "remote_path": "/imports/summaries/",
+                "options": {
+                    "create_directories": true,
+                    "verify_host_key": true
+                },
+                "timeout_seconds": 120
+            }
+        }
+    ],
+    "timeout_seconds": 900,
+    "max_retries": 3,
+    "allow_concurrent": false,
+    "enabled": true,
+    "notes": {
+        "description": "This job demonstrates SFTP download with wildcard patterns, CSV processing, and SFTP upload",
+        "sftp_auth_options": [
+            "password: username + password",
+            "ssh_key: username + private_key_path"
+        ],
+        "file_path_references": "Use {{steps.step_id.output.files[0].path}} to reference files from previous steps"
+    }
+}

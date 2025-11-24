@@ -1,0 +1,218 @@
+{
+    "name": "Complex ETL Workflow - API to File to Database",
+    "description": "Quy trình ETL phức tạp: Lấy dữ liệu từ API, xử lý file Excel, lưu vào database, và upload kết quả lên SFTP",
+    "schedule": {
+        "type": "cron",
+        "expression": "0 0 2 * * MON-FRI",
+        "timezone": "Asia/Ho_Chi_Minh"
+    },
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": {
+            "enabled": true,
+            "secret_key": "complex-workflow-secret",
+            "rate_limit": {
+                "max_requests": 10,
+                "window_seconds": 3600
+            }
+        }
+    },
+    "steps": [
+        {
+            "id": "fetch_customer_data",
+            "name": "Fetch Customer Data from CRM API",
+            "type": "http",
+            "config": {
+                "method": "GET",
+                "url": "https://crm.example.com/api/customers?updated_since={{webhook.payload.since_date}}",
+                "headers": {
+                    "Authorization": "Bearer ${CRM_API_TOKEN}",
+                    "Accept": "application/json"
+                },
+                "auth": {
+                    "type": "bearer",
+                    "token": "${CRM_API_TOKEN}"
+                },
+                "timeout_seconds": 60
+            }
+        },
+        {
+            "id": "download_product_catalog",
+            "name": "Download Product Catalog from SFTP",
+            "type": "sftp",
+            "config": {
+                "operation": "download",
+                "host": "sftp.supplier.example.com",
+                "port": 22,
+                "auth": {
+                    "type": "password",
+                    "username": "${SFTP_USERNAME}",
+                    "password": "${SFTP_PASSWORD}"
+                },
+                "remote_path": "/exports/catalog/product_catalog.xlsx",
+                "options": {
+                    "verify_host_key": true,
+                    "streaming": true
+                },
+                "timeout_seconds": 120
+            }
+        },
+        {
+            "id": "process_product_catalog",
+            "name": "Process Product Catalog Excel",
+            "type": "file_processing",
+            "config": {
+                "operation": "read",
+                "format": "excel",
+                "source_path": "{{steps.download_product_catalog.output.files[0].path}}",
+                "options": {
+                    "sheet_name": "Products",
+                    "transformations": [
+                        {
+                            "type": "column_mapping",
+                            "from": "SKU",
+                            "to": "product_sku"
+                        },
+                        {
+                            "type": "column_mapping",
+                            "from": "Price",
+                            "to": "unit_price"
+                        },
+                        {
+                            "type": "type_conversion",
+                            "column": "unit_price",
+                            "target_type": "decimal"
+                        },
+                        {
+                            "type": "filter",
+                            "condition": "unit_price > 0"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "enrich_customer_data",
+            "name": "Enrich Customer Data with Product Info",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/data/enrich",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"customers\": {{steps.fetch_customer_data.response.body.data}}, \"products\": {{steps.process_product_catalog.output.data}}}",
+                "timeout_seconds": 90
+            }
+        },
+        {
+            "id": "save_enriched_data",
+            "name": "Save Enriched Data to Database",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "INSERT INTO customer_product_enriched (customer_id, customer_name, product_sku, product_name, unit_price, enriched_at) SELECT customer_id, customer_name, product_sku, product_name, unit_price, NOW() FROM json_populate_recordset(null::customer_product_enriched, $1::json) ON CONFLICT (customer_id, product_sku) DO UPDATE SET product_name = EXCLUDED.product_name, unit_price = EXCLUDED.unit_price, enriched_at = NOW()",
+                "parameters": [
+                    "{{steps.enrich_customer_data.response.body.enriched_data}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 180
+            }
+        },
+        {
+            "id": "generate_analytics_report",
+            "name": "Generate Analytics Report",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "SELECT customer_segment, COUNT(DISTINCT customer_id) as customer_count, COUNT(DISTINCT product_sku) as product_count, AVG(unit_price) as avg_price, SUM(unit_price) as total_value FROM customer_product_enriched WHERE enriched_at::date = CURRENT_DATE GROUP BY customer_segment ORDER BY total_value DESC",
+                "parameters": [],
+                "query_type": "raw_sql",
+                "timeout_seconds": 60
+            }
+        },
+        {
+            "id": "create_excel_report",
+            "name": "Create Excel Analytics Report",
+            "type": "file_processing",
+            "config": {
+                "operation": "write",
+                "format": "excel",
+                "destination_path": "reports/analytics_{{execution_date}}.xlsx",
+                "data_source": "{{steps.generate_analytics_report.output.rows}}",
+                "options": {
+                    "sheet_name": "Customer Analytics"
+                }
+            }
+        },
+        {
+            "id": "upload_report_to_sftp",
+            "name": "Upload Report to Management SFTP",
+            "type": "sftp",
+            "config": {
+                "operation": "upload",
+                "host": "sftp.management.example.com",
+                "port": 22,
+                "auth": {
+                    "type": "ssh_key",
+                    "username": "${MGMT_SFTP_USERNAME}",
+                    "private_key_path": "/secrets/mgmt_sftp_key"
+                },
+                "local_path": "{{steps.create_excel_report.output.files[0].path}}",
+                "remote_path": "/reports/analytics/",
+                "options": {
+                    "create_directories": true,
+                    "verify_host_key": true
+                },
+                "timeout_seconds": 120
+            }
+        },
+        {
+            "id": "send_completion_notification",
+            "name": "Send Completion Notification",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/notifications/slack",
+                "headers": {
+                    "Authorization": "Bearer ${SLACK_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"channel\": \"#data-pipeline\", \"text\": \"✅ ETL Workflow completed successfully\\n- Customers processed: {{steps.fetch_customer_data.response.body.count}}\\n- Products processed: {{steps.process_product_catalog.output.row_count}}\\n- Records saved: {{steps.save_enriched_data.output.affected_rows}}\\n- Report uploaded: {{steps.upload_report_to_sftp.output.remote_path}}\"}",
+                "timeout_seconds": 10
+            }
+        }
+    ],
+    "timeout_seconds": 1800,
+    "max_retries": 2,
+    "allow_concurrent": false,
+    "enabled": true,
+    "notes": {
+        "description": "This is a comprehensive example demonstrating all job types: HTTP, SFTP, File Processing, and Database operations",
+        "workflow_steps": [
+            "1. Fetch customer data from CRM API",
+            "2. Download product catalog from SFTP",
+            "3. Process Excel file with transformations",
+            "4. Enrich customer data with product info via API",
+            "5. Save enriched data to PostgreSQL",
+            "6. Generate analytics report from database",
+            "7. Create Excel report",
+            "8. Upload report to SFTP",
+            "9. Send Slack notification"
+        ],
+        "trigger_methods": [
+            "Scheduled: Runs Monday-Friday at 2:00 AM Vietnam time",
+            "Manual: Can be triggered from dashboard",
+            "Webhook: Can be triggered by external systems with custom date parameter"
+        ],
+        "variable_references": [
+            "${CRM_API_TOKEN} - Global or job-specific variable",
+            "{{webhook.payload.since_date}} - Data from webhook payload",
+            "{{steps.step_id.output.field}} - Output from previous steps"
+        ]
+    }
+}

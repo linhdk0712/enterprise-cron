@@ -1,0 +1,138 @@
+@startuml Job Scheduling Flow - Distributed Coordination
+
+title Job Scheduling Flow - Exactly-Once Guarantee with Distributed Lock
+
+participant "Scheduler Node 1" as S1
+participant "Scheduler Node 2" as S2
+participant "Scheduler Node N" as SN
+participant "PostgreSQL\n(System DB)" as DB
+participant "Redis Cluster\n(3+ nodes)" as Redis
+participant "NATS JetStream\n(Job Queue)" as NATS
+participant "Metrics" as Metrics
+
+note over S1, SN
+  Multiple scheduler nodes running concurrently
+  Only ONE node should schedule each job
+end note
+
+== Poll for Due Jobs ==
+
+loop Every 10 seconds (configurable)
+  S1 -> DB: SELECT * FROM jobs\nWHERE enabled = true\nAND next_run_time <= NOW()
+  activate S1
+  activate DB
+  DB --> S1: List of due jobs
+  deactivate DB
+  
+  S2 -> DB: SELECT * FROM jobs\nWHERE enabled = true\nAND next_run_time <= NOW()
+  activate S2
+  activate DB
+  DB --> S2: List of due jobs (same list)
+  deactivate DB
+  
+  SN -> DB: SELECT * FROM jobs\nWHERE enabled = true\nAND next_run_time <= NOW()
+  activate SN
+  activate DB
+  DB --> SN: List of due jobs (same list)
+  deactivate DB
+end
+
+note over S1, SN
+  All schedulers detect the same jobs
+  Need distributed lock to prevent duplicates
+end note
+
+== Acquire Distributed Lock (RedLock Algorithm) ==
+
+group Job: "daily-report-job"
+  S1 -> Redis: SET job:daily-report:lock {node1-uuid}\nNX PX 30000
+  activate Redis
+  Redis --> S1: OK (Lock acquired)
+  deactivate Redis
+  
+  S2 -> Redis: SET job:daily-report:lock {node2-uuid}\nNX PX 30000
+  activate Redis
+  Redis --> S2: NULL (Lock already held)
+  deactivate Redis
+  
+  SN -> Redis: SET job:daily-report:lock {nodeN-uuid}\nNX PX 30000
+  activate Redis
+  Redis --> SN: NULL (Lock already held)
+  deactivate Redis
+  
+  note over S1
+    Node 1 wins the lock!
+    TTL: 30 seconds
+  end note
+  
+  note over S2, SN
+    Nodes 2 and N skip this job
+    Will try again in next poll cycle
+  end note
+end
+
+== Generate Idempotency Key ==
+
+S1 -> S1: Generate idempotency key\nFormat: {job_id}:{scheduled_time}:{uuid}\nExample: 550e8400-...:2025-01-20T10:00:00Z:7c9e6679-...
+
+== Create Execution Record ==
+
+S1 -> DB: INSERT INTO job_executions\n(id, job_id, idempotency_key, status, attempt)\nVALUES (uuid, job_id, idem_key, 'Pending', 1)
+activate DB
+DB --> S1: Execution created
+deactivate DB
+
+note over DB
+  Unique constraint on idempotency_key
+  prevents duplicate inserts
+end note
+
+== Publish to Queue ==
+
+S1 -> NATS: Publish job message\nSubject: jobs.execute\nPayload: {job_id, execution_id, idempotency_key, ...}
+activate NATS
+NATS --> S1: ACK (Message persisted)
+deactivate NATS
+
+note over NATS
+  JetStream guarantees:
+  - Message persistence
+  - Exactly-once delivery
+  - Acknowledgment tracking
+end note
+
+== Release Lock ==
+
+S1 -> Redis: DEL job:daily-report:lock\n(if lock_id matches)
+activate Redis
+Redis --> S1: OK (Lock released)
+deactivate Redis
+
+== Update Metrics ==
+
+S1 -> Metrics: Increment scheduler_jobs_published_total
+S1 -> Metrics: Record scheduler_lock_acquisition_duration_seconds
+
+deactivate S1
+deactivate S2
+deactivate SN
+
+== Calculate Next Execution Time ==
+
+S1 -> S1: Calculate next_run_time\nbased on schedule type:\n- Cron: Parse expression with timezone\n- Fixed Delay: last_completion + delay\n- Fixed Rate: last_start + interval\n- One-Time: Mark as complete
+
+S1 -> DB: UPDATE jobs\nSET next_run_time = calculated_time,\nlast_scheduled_at = NOW()\nWHERE id = job_id
+activate DB
+DB --> S1: Updated
+deactivate DB
+
+note over S1, NATS
+  **Exactly-Once Guarantee Achieved:**
+  
+  ✓ Layer 1: Distributed lock prevents multiple schedulers
+  ✓ Layer 2: Idempotency key prevents duplicate executions
+  ✓ Layer 3: Database unique constraint prevents duplicate records
+  ✓ Layer 4: NATS acknowledgment prevents message loss
+end note
+
+@enduml

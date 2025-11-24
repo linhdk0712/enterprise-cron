@@ -1,0 +1,49 @@
+{{- if .Values.configMap.create -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vietnam-cron.fullname" . }}
+  labels:
+    {{- include "vietnam-cron.labels" . | nindent 4 }}
+data:
+  config.toml: |
+    [server]
+    host = "0.0.0.0"
+    port = 8080
+
+    [scheduler]
+    poll_interval_seconds = {{ .Values.scheduler.config.pollIntervalSeconds }}
+    lock_ttl_seconds = {{ .Values.scheduler.config.lockTtlSeconds }}
+
+    [worker]
+    concurrency = {{ .Values.worker.config.concurrency }}
+    max_retries = {{ .Values.worker.config.maxRetries }}
+    timeout_seconds = {{ .Values.worker.config.timeoutSeconds }}
+
+    [auth]
+    mode = "{{ .Values.auth.mode }}"
+    jwt_expiry_hours = {{ .Values.auth.jwtExpiryHours }}
+
+    {{- if eq .Values.auth.mode "keycloak" }}
+    [auth.keycloak]
+    server_url = "{{ .Values.auth.keycloak.serverUrl }}"
+    realm = "{{ .Values.auth.keycloak.realm }}"
+    client_id = "{{ .Values.auth.keycloak.clientId }}"
+    {{- end }}
+
+    [observability]
+    log_level = "{{ .Values.observability.logLevel }}"
+    metrics_port = 9090
+    {{- if .Values.observability.tracingEnabled }}
+    tracing_endpoint = "{{ .Values.observability.tracingEndpoint }}"
+    {{- end }}
+
+    [minio]
+    endpoint = "{{ include "vietnam-cron.minio.endpoint" . }}"
+    bucket = "{{ .Values.minio.buckets | first | default (dict "name" "vietnam-cron") | get "name" }}"
+    region = "us-east-1"
+
+  {{- with .Values.configMap.data }}
+    {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

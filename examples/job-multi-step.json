@@ -1,0 +1,79 @@
+{
+    "name": "Process Customer Orders",
+    "description": "Lấy orders từ API, xử lý và lưu vào database",
+    "schedule": {
+        "type": "fixed_rate",
+        "interval_seconds": 300
+    },
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": null
+    },
+    "steps": [
+        {
+            "id": "fetch_orders",
+            "name": "Fetch Orders from API",
+            "type": "http",
+            "config": {
+                "method": "GET",
+                "url": "https://api.example.com/orders?status=pending",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Accept": "application/json"
+                },
+                "auth": null,
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "validate_orders",
+            "name": "Validate Orders",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/orders/validate",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{{steps.fetch_orders.response.body}}",
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "save_orders",
+            "name": "Save Valid Orders to Database",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "INSERT INTO orders (order_id, customer_id, amount, status, created_at) SELECT order_id, customer_id, amount, 'processed', NOW() FROM json_populate_recordset(null::orders, $1::json) ON CONFLICT (order_id) DO UPDATE SET status = 'processed', updated_at = NOW()",
+                "parameters": [
+                    "{{steps.validate_orders.response.body.valid_orders}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 60
+            }
+        },
+        {
+            "id": "notify_completion",
+            "name": "Send Completion Notification",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/notifications",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"message\": \"Processed {{steps.validate_orders.response.body.valid_count}} orders\", \"timestamp\": \"{{steps.save_orders.completed_at}}\"}",
+                "timeout_seconds": 10
+            }
+        }
+    ],
+    "timeout_seconds": 300,
+    "max_retries": 3,
+    "allow_concurrent": false,
+    "enabled": true
+}

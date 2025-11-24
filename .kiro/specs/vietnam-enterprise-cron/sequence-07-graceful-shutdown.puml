@@ -1,0 +1,378 @@
+@startuml Graceful Shutdown Flow
+
+title Graceful Shutdown - Scheduler and Worker Processes
+
+participant "Kubernetes" as K8s
+participant "Scheduler Process" as Scheduler
+participant "Worker Process" as Worker
+participant "Signal Handler" as Signal
+participant "PostgreSQL\n(System DB)" as DB
+participant "Redis Cluster" as Redis
+participant "NATS JetStream" as NATS
+participant "In-Flight Jobs" as Jobs
+
+== Deployment Update Initiated ==
+
+K8s -> K8s: kubectl apply -f deployment.yaml\n(new version)
+
+K8s -> K8s: Rolling update strategy:\n- maxUnavailable: 1\n- maxSurge: 1
+
+note over K8s
+  Kubernetes will gracefully terminate
+  old pods before starting new ones
+end note
+
+== Scheduler Graceful Shutdown ==
+
+K8s -> Scheduler: Send SIGTERM signal
+activate Scheduler
+
+Scheduler -> Signal: Receive SIGTERM
+activate Signal
+
+Signal -> Signal: Set shutdown flag: true
+
+Signal -> Scheduler: Initiate graceful shutdown
+deactivate Signal
+
+note over Scheduler
+  **Graceful Shutdown Steps:**
+  1. Stop accepting new work
+  2. Complete in-flight operations
+  3. Release all locks
+  4. Close connections
+  5. Exit cleanly
+  
+  **Timeout:** 30 seconds (configurable)
+end note
+
+== Stop Polling for New Jobs ==
+
+Scheduler -> Scheduler: Stop polling loop\n(no new jobs will be detected)
+
+note over Scheduler
+  Scheduler stops checking for due jobs
+  Other scheduler nodes will continue
+end note
+
+== Complete In-Flight Lock Acquisitions ==
+
+alt Lock acquisition in progress
+  Scheduler -> Redis: Complete current lock acquisition\nSET job:xyz:lock {node-uuid} NX PX 30000
+  activate Redis
+  
+  alt Lock acquired
+    Redis --> Scheduler: OK (Lock acquired)
+    deactivate Redis
+    
+    Scheduler -> DB: INSERT INTO job_executions (...)
+    activate DB
+    DB --> Scheduler: Execution created
+    deactivate DB
+    
+    Scheduler -> NATS: Publish job to queue
+    activate NATS
+    NATS --> Scheduler: ACK
+    deactivate NATS
+    
+    Scheduler -> Redis: DEL job:xyz:lock
+    activate Redis
+    Redis --> Scheduler: OK (Lock released)
+    deactivate Redis
+    
+    note over Scheduler
+      Job successfully scheduled
+      before shutdown
+    end note
+    
+  else Lock not acquired
+    Redis --> Scheduler: NULL (Lock held by another node)
+    deactivate Redis
+    
+    note over Scheduler
+      Another node will handle this job
+      Safe to skip
+    end note
+  end
+end
+
+== Release All Held Locks ==
+
+Scheduler -> Scheduler: Iterate through all held locks
+
+loop For each held lock
+  Scheduler -> Redis: DEL job:{job_id}:lock\n(if lock_id matches)
+  activate Redis
+  Redis --> Scheduler: OK (Lock released)
+  deactivate Redis
+end
+
+note over Scheduler, Redis
+  Ensures no locks are left dangling
+  Other schedulers can acquire them
+end note
+
+== Close Connections ==
+
+Scheduler -> Redis: Close Redis connection pool
+activate Redis
+Redis --> Scheduler: Connections closed
+deactivate Redis
+
+Scheduler -> NATS: Close NATS connection
+activate NATS
+NATS --> Scheduler: Connection closed
+deactivate NATS
+
+Scheduler -> DB: Close database connection pool
+activate DB
+DB --> Scheduler: Connections closed
+deactivate DB
+
+== Exit Process ==
+
+Scheduler -> Scheduler: Log: "Scheduler shutdown complete"
+Scheduler -> Scheduler: Exit with code 0
+
+deactivate Scheduler
+
+K8s -> K8s: Pod terminated successfully
+
+note over K8s
+  Kubernetes starts new scheduler pod
+  with updated version
+end note
+
+== Worker Graceful Shutdown ==
+
+K8s -> Worker: Send SIGTERM signal
+activate Worker
+
+Worker -> Signal: Receive SIGTERM
+activate Signal
+
+Signal -> Signal: Set shutdown flag: true
+
+Signal -> Worker: Initiate graceful shutdown
+deactivate Signal
+
+== Stop Consuming New Jobs ==
+
+Worker -> NATS: Unsubscribe from "jobs" stream\n(stop receiving new messages)
+activate NATS
+NATS --> Worker: Unsubscribed
+deactivate NATS
+
+note over Worker
+  Worker stops consuming new jobs
+  Other workers will handle them
+end note
+
+== Complete In-Flight Job Executions ==
+
+alt Jobs currently executing
+  Worker -> Jobs: Wait for in-flight jobs to complete
+  activate Jobs
+  
+  note over Jobs
+    Multiple jobs may be executing
+    concurrently (up to worker concurrency limit)
+  end note
+  
+  loop For each in-flight job
+    Jobs -> Jobs: Continue execution\n(HTTP request or database query)
+    
+    alt Job completes successfully
+      Jobs -> DB: UPDATE job_executions\nSET status = 'Success',\nresult = '...',\ncompleted_at = NOW()
+      activate DB
+      DB --> Jobs: Updated
+      deactivate DB
+      
+      Jobs -> NATS: ACK message
+      activate NATS
+      NATS --> Jobs: Acknowledged
+      deactivate NATS
+      
+      note over Jobs
+        Job completed successfully
+        before shutdown
+      end note
+      
+    else Job fails
+      Jobs -> DB: UPDATE job_executions\nSET status = 'Failed',\nerror = '...',\nattempt = attempt + 1
+      activate DB
+      DB --> Jobs: Updated
+      deactivate DB
+      
+      Jobs -> NATS: NACK message\n(requeue for retry by another worker)
+      activate NATS
+      NATS --> Jobs: Requeued
+      deactivate NATS
+      
+      note over Jobs
+        Job will be retried by another worker
+      end note
+    end
+  end
+  
+  Jobs --> Worker: All in-flight jobs completed
+  deactivate Jobs
+  
+else No jobs executing
+  Worker -> Worker: No in-flight jobs to wait for
+end
+
+== Handle Shutdown Timeout ==
+
+alt Shutdown timeout exceeded (30 seconds)
+  Worker -> Worker: Force terminate in-flight jobs
+  
+  Worker -> DB: UPDATE job_executions\nSET status = 'Failed',\nerror = 'Worker shutdown timeout'\nWHERE status = 'Running'\nAND worker_id = current_worker_id
+  activate DB
+  DB --> Worker: Updated
+  deactivate DB
+  
+  Worker -> NATS: NACK all in-flight messages\n(requeue for retry)
+  activate NATS
+  NATS --> Worker: Requeued
+  deactivate NATS
+  
+  note over Worker
+    Jobs will be retried by other workers
+    Idempotency key prevents duplicates
+  end note
+end
+
+== Close Connections ==
+
+Worker -> NATS: Close NATS connection
+activate NATS
+NATS --> Worker: Connection closed
+deactivate NATS
+
+Worker -> DB: Close database connection pool
+activate DB
+DB --> Worker: Connections closed
+deactivate DB
+
+Worker -> Worker: Close HTTP client connections
+
+== Exit Process ==
+
+Worker -> Worker: Log: "Worker shutdown complete"
+Worker -> Worker: Exit with code 0
+
+deactivate Worker
+
+K8s -> K8s: Pod terminated successfully
+
+note over K8s
+  Kubernetes starts new worker pod
+  with updated version
+end note
+
+== Kubernetes Configuration ==
+
+note over K8s
+  **Deployment Configuration:**
+  
+  ```yaml
+  spec:
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 1
+        maxSurge: 1
+    template:
+      spec:
+        terminationGracePeriodSeconds: 60
+        containers:
+        - name: scheduler
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+  ```
+  
+  **terminationGracePeriodSeconds: 60**
+  - Kubernetes waits up to 60 seconds for graceful shutdown
+  - If process doesn't exit, sends SIGKILL
+  
+  **preStop hook:**
+  - Optional delay before SIGTERM
+  - Allows load balancer to deregister pod
+  - Prevents new requests during shutdown
+end note
+
+== Zero-Downtime Deployment ==
+
+note over K8s, Worker
+  **Zero-Downtime Guarantee:**
+  
+  ✓ Multiple scheduler nodes running
+    - If one shuts down, others continue
+    - No jobs missed during deployment
+  
+  ✓ Multiple worker nodes running
+    - If one shuts down, others continue
+    - In-flight jobs complete or requeue
+  
+  ✓ Distributed lock prevents duplicates
+    - Lock released on shutdown
+    - Other nodes can acquire
+  
+  ✓ Idempotency key prevents duplicates
+    - Requeued jobs won't execute twice
+    - Safe to NACK on shutdown
+  
+  ✓ NATS message persistence
+    - Messages not lost on worker shutdown
+    - Redelivered to other workers
+  
+  **Result:**
+  - No jobs lost
+  - No duplicate executions
+  - No downtime
+  - Seamless updates
+end note
+
+== Health Check Integration ==
+
+note over K8s, Scheduler
+  **Kubernetes Health Checks:**
+  
+  **Liveness Probe:**
+  - Endpoint: /health/live
+  - Checks if process is alive
+  - Restarts pod if fails
+  
+  **Readiness Probe:**
+  - Endpoint: /health/ready
+  - Checks if ready to accept work
+  - Removes from load balancer if fails
+  
+  **During Shutdown:**
+  1. Readiness probe starts failing
+  2. Kubernetes removes pod from service
+  3. No new requests routed to pod
+  4. Graceful shutdown proceeds
+  5. Pod terminates cleanly
+  
+  ```yaml
+  livenessProbe:
+    httpGet:
+      path: /health/live
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  
+  readinessProbe:
+    httpGet:
+      path: /health/ready
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 5
+  ```
+end note
+
+@enduml

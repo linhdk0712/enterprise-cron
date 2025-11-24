@@ -1,0 +1,52 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+config/local.toml
+*.local.toml
+
+# Logs
+*.log
+
+# Test artifacts
+/test-results/
+
+# Docker
+/logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Database
+*.db
+*.sqlite
+
+# MinIO data
+/minio-data/
+
+# Node modules (if any)
+node_modules/

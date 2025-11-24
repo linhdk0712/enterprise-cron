@@ -1,0 +1,341 @@
+# Vietnam Enterprise Cron System - Example Local Configuration
+# Copy this file to config/local.toml and customize for your environment
+# File config/local.toml is gitignored and will override default.toml values
+
+# ============================================================================
+# SERVER CONFIGURATION
+# ============================================================================
+[server]
+# Host address to bind the API server
+# Use "0.0.0.0" to listen on all interfaces
+# Use "127.0.0.1" for localhost only
+host = "0.0.0.0"
+
+# Port for API server and dashboard
+port = 8080
+
+# ============================================================================
+# DATABASE CONFIGURATION (PostgreSQL)
+# ============================================================================
+[database]
+# PostgreSQL connection URL
+# Format: postgresql://username:password@host:port/database?options
+url = "postgresql://cronuser:cronpass@localhost:5432/vietnam_cron"
+
+# Connection pool settings
+max_connections = 20
+min_connections = 5
+
+# Connection timeout in seconds
+connect_timeout_seconds = 30
+
+# Enable SSL mode (require, prefer, disable)
+# ssl_mode = "require"
+
+# ============================================================================
+# REDIS CONFIGURATION (Distributed Locking & Rate Limiting)
+# ============================================================================
+[redis]
+# Redis connection URL
+# Format: redis://[:password@]host:port[/database]
+url = "redis://:redispass@localhost:6379"
+
+# Connection pool size
+pool_size = 10
+
+# Connection timeout in seconds
+# connect_timeout_seconds = 5
+
+# ============================================================================
+# NATS CONFIGURATION (Job Queue)
+# ============================================================================
+[nats]
+# NATS server URL
+# For cluster: "nats://host1:4222,host2:4222,host3:4222"
+url = "nats://localhost:4222"
+
+# JetStream stream name for jobs
+stream_name = "job_stream"
+
+# Consumer name for workers
+consumer_name = "job_consumer"
+
+# Max pending messages
+# max_pending = 1000
+
+# Acknowledgment wait time in seconds
+# ack_wait_seconds = 30
+
+# ============================================================================
+# MINIO CONFIGURATION (Object Storage)
+# ============================================================================
+[minio]
+# MinIO endpoint (without http:// or https://)
+endpoint = "localhost:9000"
+
+# Access credentials
+access_key = "minioadmin"
+secret_key = "minioadmin"
+
+# Bucket name for storing job definitions and context
+bucket = "vietnam-cron"
+
+# AWS region (for S3 compatibility)
+region = "us-east-1"
+
+# Use SSL/TLS (true for production)
+use_ssl = false
+
+# Path style (true for MinIO, false for AWS S3)
+# path_style = true
+
+# ============================================================================
+# AUTHENTICATION CONFIGURATION
+# ============================================================================
+[auth]
+# Authentication mode: "database" or "keycloak"
+# - database: Users stored in PostgreSQL with bcrypt passwords
+# - keycloak: External Keycloak identity provider
+mode = "database"
+
+# JWT secret key (CHANGE THIS IN PRODUCTION!)
+# Generate with: openssl rand -base64 32
+jwt_secret = "your-secret-key-here-change-in-production"
+
+# JWT token expiration in hours
+jwt_expiration_hours = 24
+
+# Refresh token expiration in hours (optional)
+# refresh_token_expiration_hours = 168  # 7 days
+
+# ============================================================================
+# KEYCLOAK CONFIGURATION (Only if auth.mode = "keycloak")
+# ============================================================================
+[auth.keycloak]
+# Keycloak server URL
+server_url = "https://keycloak.example.com"
+
+# Keycloak realm name
+realm = "vietnam-cron"
+
+# Client ID for this application
+client_id = "cron-client"
+
+# Client secret (if using confidential client)
+# client_secret = "your-client-secret"
+
+# Public key cache TTL in seconds
+# public_key_cache_ttl = 3600
+
+# ============================================================================
+# SCHEDULER CONFIGURATION
+# ============================================================================
+[scheduler]
+# How often to poll for jobs due (in seconds)
+# Lower values = more responsive, higher CPU usage
+poll_interval_seconds = 10
+
+# Distributed lock TTL in seconds
+# Should be > poll_interval_seconds
+lock_ttl_seconds = 30
+
+# Maximum jobs to schedule per poll
+# max_jobs_per_poll = 100
+
+# ============================================================================
+# WORKER CONFIGURATION
+# ============================================================================
+[worker]
+# Number of concurrent job executions per worker
+# Adjust based on CPU cores and job types
+concurrency = 10
+
+# Maximum retry attempts for failed jobs
+max_retries = 10
+
+# Default timeout for job execution in seconds
+timeout_seconds = 300
+
+# Exponential backoff base delay in seconds
+# retry_base_delay_seconds = 5
+
+# Maximum backoff delay in seconds
+# retry_max_delay_seconds = 1800  # 30 minutes
+
+# Jitter factor (0.0 to 1.0)
+# retry_jitter_factor = 0.1
+
+# ============================================================================
+# CIRCUIT BREAKER CONFIGURATION
+# ============================================================================
+[circuit_breaker]
+# Number of failures before opening circuit
+# failure_threshold = 5
+
+# Time to wait before attempting half-open in seconds
+# timeout_seconds = 60
+
+# Number of successful calls to close circuit
+# success_threshold = 2
+
+# ============================================================================
+# OBSERVABILITY CONFIGURATION
+# ============================================================================
+[observability]
+# Log level: trace, debug, info, warn, error
+log_level = "info"
+
+# Port for Prometheus metrics endpoint
+metrics_port = 9090
+
+# OpenTelemetry OTLP endpoint (optional)
+# Uncomment to enable distributed tracing
+# tracing_endpoint = "http://localhost:4317"
+
+# Tracing sample rate (0.0 to 1.0)
+# tracing_sample_rate = 1.0
+
+# Log format: json or pretty
+# log_format = "json"
+
+# ============================================================================
+# RATE LIMITING CONFIGURATION (for webhooks)
+# ============================================================================
+[rate_limit]
+# Default rate limit for webhooks (requests per window)
+# default_max_requests = 100
+
+# Default time window in seconds
+# default_window_seconds = 60
+
+# ============================================================================
+# FILE PROCESSING CONFIGURATION
+# ============================================================================
+[file_processing]
+# Maximum file size in MB for in-memory processing
+# max_memory_file_size_mb = 100
+
+# Temporary directory for file processing
+# temp_dir = "/tmp/vietnam-cron"
+
+# ============================================================================
+# SFTP CONFIGURATION
+# ============================================================================
+[sftp]
+# Connection timeout in seconds
+# connect_timeout_seconds = 30
+
+# Read/Write timeout in seconds
+# io_timeout_seconds = 300
+
+# Maximum concurrent SFTP connections
+# max_connections = 5
+
+# ============================================================================
+# WEBHOOK CONFIGURATION
+# ============================================================================
+[webhook]
+# HMAC signature algorithm: sha256, sha512
+# signature_algorithm = "sha256"
+
+# Signature header name
+# signature_header = "X-Webhook-Signature"
+
+# Timestamp tolerance in seconds (for replay attack prevention)
+# timestamp_tolerance_seconds = 300
+
+# ============================================================================
+# PERFORMANCE TUNING
+# ============================================================================
+[performance]
+# Database query timeout in seconds
+# db_query_timeout_seconds = 30
+
+# HTTP client timeout in seconds
+# http_client_timeout_seconds = 30
+
+# HTTP client connection pool size
+# http_client_pool_size = 100
+
+# ============================================================================
+# DEVELOPMENT/DEBUG SETTINGS
+# ============================================================================
+[development]
+# Enable debug mode (more verbose logging, pretty logs)
+# debug = false
+
+# Enable SQL query logging
+# log_sql_queries = false
+
+# Enable request/response logging
+# log_http_requests = false
+
+# Disable authentication (NEVER use in production!)
+# disable_auth = false
+
+# ============================================================================
+# EXAMPLE CONFIGURATIONS FOR DIFFERENT ENVIRONMENTS
+# ============================================================================
+
+# --- DEVELOPMENT ---
+# [server]
+# host = "127.0.0.1"
+# port = 8080
+# 
+# [database]
+# url = "postgresql://dev:dev@localhost:5432/vietnam_cron_dev"
+# 
+# [observability]
+# log_level = "debug"
+# log_format = "pretty"
+
+# --- STAGING ---
+# [server]
+# host = "0.0.0.0"
+# port = 8080
+# 
+# [database]
+# url = "postgresql://staging:password@db-staging:5432/vietnam_cron_staging"
+# ssl_mode = "require"
+# 
+# [auth]
+# mode = "keycloak"
+# 
+# [auth.keycloak]
+# server_url = "https://keycloak-staging.example.com"
+# realm = "vietnam-cron-staging"
+
+# --- PRODUCTION ---
+# [server]
+# host = "0.0.0.0"
+# port = 8080
+# 
+# [database]
+# url = "postgresql://prod:secure-password@db-prod:5432/vietnam_cron_prod"
+# ssl_mode = "require"
+# max_connections = 50
+# 
+# [redis]
+# url = "redis://:secure-password@redis-cluster:6379"
+# pool_size = 20
+# 
+# [auth]
+# mode = "keycloak"
+# jwt_expiration_hours = 8
+# 
+# [auth.keycloak]
+# server_url = "https://keycloak.example.com"
+# realm = "vietnam-cron"
+# client_id = "cron-prod"
+# 
+# [scheduler]
+# poll_interval_seconds = 5
+# 
+# [worker]
+# concurrency = 20
+# 
+# [observability]
+# log_level = "info"
+# tracing_endpoint = "http://jaeger:4317"
+# tracing_sample_rate = 0.1
+

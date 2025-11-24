@@ -1,0 +1,55 @@
+[package]
+name = "api"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "api"
+path = "src/main.rs"
+
+[dependencies]
+# Local dependencies
+common = { path = "../common" }
+
+# Workspace dependencies
+tokio.workspace = true
+tokio-stream.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tera.workspace = true
+reqwest.workspace = true
+sqlx.workspace = true
+redis.workspace = true
+async-nats.workspace = true
+rust-s3.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+jsonwebtoken.workspace = true
+bcrypt.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+opentelemetry.workspace = true
+opentelemetry-otlp.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+config.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+lazy_static.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+mockall.workspace = true
+testcontainers.workspace = true

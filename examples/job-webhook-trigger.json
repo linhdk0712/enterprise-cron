@@ -1,0 +1,82 @@
+{
+    "name": "Process Webhook Payment Notification",
+    "description": "Xử lý thông báo thanh toán từ payment gateway qua webhook",
+    "schedule": null,
+    "triggers": {
+        "scheduled": false,
+        "manual": true,
+        "webhook": {
+            "enabled": true,
+            "secret_key": "your-webhook-secret-key-here",
+            "rate_limit": {
+                "max_requests": 100,
+                "window_seconds": 60
+            }
+        }
+    },
+    "steps": [
+        {
+            "id": "validate_payment",
+            "name": "Validate Payment Data",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/payments/validate",
+                "headers": {
+                    "Authorization": "Bearer ${API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"transaction_id\": \"{{webhook.payload.transaction_id}}\", \"amount\": {{webhook.payload.amount}}, \"currency\": \"{{webhook.payload.currency}}\"}",
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "update_order_status",
+            "name": "Update Order Status in Database",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${DB_CONNECTION_STRING}",
+                "query": "UPDATE orders SET status = $1, payment_id = $2, paid_at = NOW(), updated_at = NOW() WHERE order_id = $3 RETURNING *",
+                "parameters": [
+                    "paid",
+                    "{{webhook.payload.transaction_id}}",
+                    "{{webhook.payload.order_id}}"
+                ],
+                "query_type": "raw_sql",
+                "timeout_seconds": 30
+            }
+        },
+        {
+            "id": "send_confirmation_email",
+            "name": "Send Confirmation Email",
+            "type": "http",
+            "config": {
+                "method": "POST",
+                "url": "https://api.example.com/emails/send",
+                "headers": {
+                    "Authorization": "Bearer ${EMAIL_API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                "body": "{\"to\": \"{{steps.update_order_status.output.rows[0].customer_email}}\", \"template\": \"payment_confirmation\", \"data\": {\"order_id\": \"{{webhook.payload.order_id}}\", \"amount\": {{webhook.payload.amount}}, \"transaction_id\": \"{{webhook.payload.transaction_id}}\"}}",
+                "timeout_seconds": 15
+            }
+        }
+    ],
+    "timeout_seconds": 120,
+    "max_retries": 3,
+    "allow_concurrent": true,
+    "enabled": true,
+    "notes": {
+        "webhook_url_format": "https://your-domain.com/api/webhooks/{job_id}",
+        "webhook_signature": "HMAC-SHA256 signature in X-Webhook-Signature header",
+        "example_webhook_payload": {
+            "transaction_id": "TXN123456789",
+            "order_id": "ORD987654321",
+            "amount": 1500000,
+            "currency": "VND",
+            "status": "success",
+            "timestamp": "2025-01-15T10:30:00Z"
+        }
+    }
+}

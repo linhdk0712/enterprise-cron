@@ -1,0 +1,32 @@
+{
+    "name": "Daily Sales Report",
+    "description": "Tạo báo cáo doanh số hàng ngày từ database",
+    "schedule": {
+        "type": "cron",
+        "expression": "0 0 6 * * *",
+        "timezone": "Asia/Ho_Chi_Minh"
+    },
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": null
+    },
+    "steps": [
+        {
+            "id": "query_sales",
+            "name": "Query Daily Sales",
+            "type": "database",
+            "config": {
+                "database_type": "postgresql",
+                "connection_string": "${SALES_DB_URL}",
+                "query": "SELECT product_id, product_name, SUM(quantity) as total_quantity, SUM(amount) as total_amount FROM orders WHERE created_at >= CURRENT_DATE - INTERVAL '1 day' AND created_at < CURRENT_DATE GROUP BY product_id, product_name ORDER BY total_amount DESC LIMIT 100",
+                "query_type": "raw_sql",
+                "timeout_seconds": 60
+            }
+        }
+    ],
+    "timeout_seconds": 120,
+    "max_retries": 3,
+    "allow_concurrent": false,
+    "enabled": true
+}

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 653f178ea15581d8cec47fc32b69cb40240bac6227edd4041d9ffb474031e899 # shrinks to procedure_name = "a_Aa", param_count = 0
+cc 3677bb509a1150d91ca93c053f8e22852caafad0ebfdcbfec85b764bc1a37733 # shrinks to host = "0aA-A", port = 1024, database = "A_a"
+cc 1cefe598689d87ff8a45bbfe3d838742c7988441751ad8627d59adffe9e93b52 # shrinks to table_name = "A000", column_name = "_A__"

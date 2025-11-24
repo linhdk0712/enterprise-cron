@@ -1,0 +1,232 @@
+@startuml Database Job Execution Flow
+
+title Database Job Execution with Parameterized Queries
+
+actor "Worker Process" as Worker
+participant "NATS JetStream" as NATS
+participant "PostgreSQL\n(System DB)" as SystemDB
+participant "Variable Resolver" as VarResolver
+participant "Database Executor" as DBExec
+participant "Target Database\n(Oracle/MySQL/PostgreSQL)" as TargetDB
+participant "Metrics & Logs" as Observability
+
+== Consume Job from Queue ==
+
+Worker -> NATS: Receive database job message
+activate Worker
+activate NATS
+
+note over Worker
+  Job Config:
+  {
+    "type": "DatabaseQuery",
+    "database_type": "PostgreSQL",
+    "connection_string": "postgresql://{{db_user}}:{{db_pass}}@{{db_host}}/{{db_name}}",
+    "query": "UPDATE users SET status = {{status}} WHERE created_at < {{cutoff_date}}",
+    "query_type": "RawSql"
+  }
+end note
+
+== Check Idempotency ==
+
+Worker -> SystemDB: SELECT * FROM job_executions\nWHERE idempotency_key = ?
+activate SystemDB
+SystemDB --> Worker: Execution record (status: Pending)
+deactivate SystemDB
+
+== Update Execution Status ==
+
+Worker -> SystemDB: UPDATE job_executions\nSET status = 'Running', started_at = NOW()
+activate SystemDB
+SystemDB --> Worker: Updated
+deactivate SystemDB
+
+Worker -> Observability: Log: "Database job execution started"
+Worker -> Observability: Create trace span: "db_job_execution"
+
+== Resolve Variables ==
+
+Worker -> VarResolver: Resolve variables in connection string and query
+activate VarResolver
+
+VarResolver -> SystemDB: Load global variables
+activate SystemDB
+SystemDB --> VarResolver: {db_host: "prod-db.example.com", db_name: "production"}
+deactivate SystemDB
+
+VarResolver -> SystemDB: Load job-specific variables
+activate SystemDB
+SystemDB --> VarResolver: {db_user: "app_user", db_pass: "***", status: "inactive", cutoff_date: "2024-01-01"}
+deactivate SystemDB
+
+VarResolver -> VarResolver: Merge and decrypt sensitive variables
+
+VarResolver -> VarResolver: Substitute connection string:\npostgresql://app_user:decrypted_pass@prod-db.example.com/production
+
+note over VarResolver
+  **SQL Injection Prevention:**
+  
+  Query template:
+  UPDATE users SET status = {{status}} 
+  WHERE created_at < {{cutoff_date}}
+  
+  Converted to parameterized query:
+  UPDATE users SET status = $1 
+  WHERE created_at < $2
+  
+  Parameters: ["inactive", "2024-01-01"]
+end note
+
+VarResolver -> VarResolver: Convert to parameterized query:\n- Extract variable placeholders\n- Replace with parameter markers ($1, $2, ...)\n- Build parameter array
+
+VarResolver --> Worker: Resolved config:\n- Connection: postgresql://app_user:***@prod-db.example.com/production\n- Query: UPDATE users SET status = $1 WHERE created_at < $2\n- Params: ["inactive", "2024-01-01"]
+deactivate VarResolver
+
+== Execute Database Query ==
+
+Worker -> DBExec: Execute database query
+activate DBExec
+
+DBExec -> DBExec: Determine database driver:\n- PostgreSQL: Use sqlx/tokio-postgres\n- MySQL: Use mysql_async\n- Oracle: Use oracle crate
+
+DBExec -> TargetDB: Connect to database\nConnection string: postgresql://app_user:***@prod-db.example.com/production
+activate TargetDB
+
+alt Connection successful
+  TargetDB --> DBExec: Connection established
+  
+  DBExec -> DBExec: Set connection timeout: 30 seconds
+  DBExec -> DBExec: Set query timeout: 300 seconds (configurable)
+  
+  DBExec -> TargetDB: BEGIN TRANSACTION (if configured)
+  TargetDB --> DBExec: Transaction started
+  
+  DBExec -> TargetDB: EXECUTE parameterized query:\nUPDATE users SET status = $1 WHERE created_at < $2\nParams: ["inactive", "2024-01-01"]
+  
+  note over TargetDB
+    Parameterized query prevents SQL injection
+    Database engine handles parameter binding safely
+  end note
+  
+  alt Query successful
+    TargetDB --> DBExec: Query result:\n{rows_affected: 1523, execution_time: 2.3s}
+    
+    DBExec -> TargetDB: COMMIT TRANSACTION
+    TargetDB --> DBExec: Transaction committed
+    
+    DBExec -> TargetDB: Close connection
+    deactivate TargetDB
+    
+    DBExec --> Worker: Success\nResult: {rows_affected: 1523, execution_time: 2.3s}
+    deactivate DBExec
+    
+    Worker -> SystemDB: UPDATE job_executions\nSET status = 'Success',\nresult = '{"rows_affected": 1523, "execution_time": 2.3}',\ncompleted_at = NOW()
+    activate SystemDB
+    SystemDB --> Worker: Updated
+    deactivate SystemDB
+    
+    Worker -> NATS: ACK message
+    deactivate NATS
+    
+    Worker -> Observability: Log: "Database job completed successfully"\n{rows_affected: 1523, duration: 2.3s}
+    Worker -> Observability: Increment job_success_total
+    Worker -> Observability: Record job_duration_seconds: 2.3
+    Worker -> Observability: Close trace span (status: OK)
+    
+    deactivate Worker
+    
+  else Query failed (SQL error)
+    TargetDB --> DBExec: Error: Syntax error or constraint violation\n{error_code: "23505", message: "duplicate key value"}
+    
+    DBExec -> TargetDB: ROLLBACK TRANSACTION
+    TargetDB --> DBExec: Transaction rolled back
+    
+    DBExec -> TargetDB: Close connection
+    deactivate TargetDB
+    
+    DBExec --> Worker: Error: SQL execution failed\n{error_code: "23505", message: "duplicate key value"}
+    deactivate DBExec
+    
+    Worker -> SystemDB: UPDATE job_executions\nSET status = 'Failed',\nerror = 'SQL error: duplicate key value',\nattempt = attempt + 1,\ncompleted_at = NOW()
+    activate SystemDB
+    SystemDB --> Worker: Updated
+    deactivate SystemDB
+    
+    alt Retriable error (connection, timeout)
+      Worker -> NATS: NACK message (requeue with backoff)
+      deactivate NATS
+      Worker -> Observability: Log: "Database job failed, will retry"
+    else Non-retriable error (syntax, constraint)
+      Worker -> NATS: ACK message (don't retry)
+      deactivate NATS
+      Worker -> Observability: Log: "Database job failed with non-retriable error"
+    end
+    
+    Worker -> Observability: Increment job_failed_total
+    Worker -> Observability: Close trace span (status: ERROR)
+    
+    deactivate Worker
+  end
+  
+else Connection failed
+  TargetDB --> DBExec: Error: Connection refused or timeout
+  deactivate TargetDB
+  
+  DBExec --> Worker: Error: Cannot connect to database
+  deactivate DBExec
+  
+  Worker -> SystemDB: UPDATE job_executions\nSET status = 'Failed',\nerror = 'Database connection failed',\nattempt = attempt + 1
+  activate SystemDB
+  SystemDB --> Worker: Updated
+  deactivate SystemDB
+  
+  Worker -> NATS: NACK message (requeue with exponential backoff)
+  deactivate NATS
+  
+  Worker -> Observability: Log: "Database connection failed, will retry"
+  Worker -> Observability: Increment job_failed_total
+  
+  deactivate Worker
+end
+
+== Handle Stored Procedure (Alternative) ==
+
+note over Worker, TargetDB
+  **For Stored Procedure Jobs:**
+  
+  Job Config:
+  {
+    "query_type": "StoredProcedure",
+    "procedure_name": "update_user_status",
+    "parameters": ["{{status}}", "{{cutoff_date}}"]
+  }
+  
+  Execution:
+  - PostgreSQL: SELECT update_user_status($1, $2)
+  - MySQL: CALL update_user_status(?, ?)
+  - Oracle: BEGIN update_user_status(:1, :2); END;
+  
+  Parameters are still bound safely to prevent injection
+end note
+
+== Database-Specific Handling ==
+
+note over DBExec, TargetDB
+  **PostgreSQL:**
+  - Driver: sqlx or tokio-postgres
+  - Parameter markers: $1, $2, $3, ...
+  - Transaction support: BEGIN/COMMIT/ROLLBACK
+  
+  **MySQL:**
+  - Driver: mysql_async
+  - Parameter markers: ?, ?, ?, ...
+  - Transaction support: START TRANSACTION/COMMIT/ROLLBACK
+  
+  **Oracle 19c:**
+  - Driver: oracle crate
+  - Parameter markers: :1, :2, :3, ...
+  - Transaction support: BEGIN/COMMIT/ROLLBACK
+  - Special handling for CLOB/BLOB types
+end note
+
+@enduml

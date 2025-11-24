@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 859d851d7e8b614f8c8d1536a275f0716ed9d40923fa5e0be20256fabc316737 # shrinks to username = "aa0Aa", password = "aAaAaaaa"
+cc 35023c18f4db103d74b4ea5b42137bc553a04609e5607663ee639168a99ddd8a # shrinks to header_value = "0-a0A", custom_value = "Aaa0A"
+cc c0a0fa422a2306e071cdd8ed0527c84b244c8a9daa48335d6a8c2b359d51c6cb # shrinks to body_content = " 0aa a00 A"
+cc 1340f5e60585b9c8e58e0b0d498a54764b6754e14c7d27a4aca43859bdc1ea47 # shrinks to token = "A00A0000aA0000aaAAa0"
+cc 18eedb71bbd1267b149096a50da992fc1b8d2b59c83ff93b6568850c23b75e6c # shrinks to client_id = "AAAaAaaaAA", client_secret = "0a0aA0a0aaAaAaAAaAaa", access_token = "0Aaaa000aAaAAAaAAA0A00A0aAA0aa"

@@ -1,0 +1,243 @@
+@startuml HTTP Job Execution Flow
+
+title HTTP Job Execution with Variable Resolution and Retry Logic
+
+actor "Worker Process" as Worker
+participant "NATS JetStream" as NATS
+participant "PostgreSQL\n(System DB)" as DB
+participant "Variable Resolver" as VarResolver
+participant "HTTP Executor" as HTTPExec
+participant "Circuit Breaker" as CB
+participant "External API" as API
+participant "Retry Manager" as Retry
+participant "Metrics & Logs" as Observability
+
+== Consume Job from Queue ==
+
+Worker -> NATS: Subscribe to "jobs" stream\nConsumer: "workers"\nAck Policy: Explicit
+activate Worker
+activate NATS
+NATS --> Worker: Job message received\n{job_id, execution_id, idempotency_key, job_config}
+
+note over Worker
+  Job Config:
+  {
+    "type": "HttpRequest",
+    "method": "POST",
+    "url": "https://api.{{env}}.example.com/users",
+    "headers": {
+      "X-API-Key": "{{api_key}}",
+      "Content-Type": "application/json"
+    },
+    "body": "{\"name\": \"{{user_name}}\"}",
+    "auth": {
+      "type": "Bearer",
+      "token": "{{bearer_token}}"
+    }
+  }
+end note
+
+== Check Idempotency ==
+
+Worker -> DB: SELECT * FROM job_executions\nWHERE idempotency_key = ?
+activate DB
+DB --> Worker: Execution record found\nStatus: 'Pending'
+deactivate DB
+
+alt Execution already completed
+  Worker -> Worker: Check status
+  Worker -> NATS: ACK message (skip duplicate)
+  Worker -> Observability: Log: "Duplicate execution detected, skipped"
+  deactivate Worker
+  deactivate NATS
+else Execution pending or not found
+  Worker -> Worker: Proceed with execution
+end
+
+== Update Execution Status ==
+
+Worker -> DB: UPDATE job_executions\nSET status = 'Running',\nstarted_at = NOW()\nWHERE id = execution_id
+activate DB
+DB --> Worker: Updated
+deactivate DB
+
+Worker -> Observability: Log: "Job execution started"\n{job_id, execution_id, timestamp}
+Worker -> Observability: Create OpenTelemetry span\nSpan: "job_execution"
+
+== Resolve Variables ==
+
+Worker -> VarResolver: Resolve variables in job config
+activate VarResolver
+
+VarResolver -> DB: SELECT * FROM variables\nWHERE scope_type = 'Global'
+activate DB
+DB --> VarResolver: Global variables:\n{env: "production", api_key: "***"}
+deactivate DB
+
+VarResolver -> DB: SELECT * FROM variables\nWHERE scope_type = 'Job'\nAND scope_id = job_id
+activate DB
+DB --> VarResolver: Job-specific variables:\n{user_name: "admin", bearer_token: "***"}
+deactivate DB
+
+VarResolver -> VarResolver: Merge variables\n(job-specific overrides global)
+
+VarResolver -> VarResolver: Decrypt sensitive variables\n(AES-256-GCM)
+
+VarResolver -> VarResolver: Substitute placeholders:\n- URL: https://api.production.example.com/users\n- Header X-API-Key: actual_key_value\n- Body: {"name": "admin"}\n- Auth token: actual_bearer_token
+
+alt Variable not found
+  VarResolver --> Worker: Error: "Variable '{{missing_var}}' not found"
+  Worker -> DB: UPDATE job_executions\nSET status = 'Failed',\nerror = 'Variable not found',\ncompleted_at = NOW()
+  Worker -> NATS: ACK message
+  Worker -> Observability: Log error
+  deactivate Worker
+  deactivate NATS
+else All variables resolved
+  VarResolver --> Worker: Resolved job config
+  deactivate VarResolver
+end
+
+== Check Circuit Breaker ==
+
+Worker -> CB: Check circuit state for target: api.production.example.com
+activate CB
+
+alt Circuit is OPEN
+  CB --> Worker: Circuit OPEN - Fail fast
+  Worker -> DB: UPDATE job_executions\nSET status = 'Failed',\nerror = 'Circuit breaker open',\ncompleted_at = NOW()
+  Worker -> Retry: Schedule retry with backoff
+  Worker -> NATS: ACK message
+  Worker -> Observability: Log: "Circuit breaker open, execution failed"
+  deactivate Worker
+  deactivate NATS
+else Circuit is CLOSED or HALF-OPEN
+  CB --> Worker: Circuit OK - Proceed
+  deactivate CB
+end
+
+== Execute HTTP Request ==
+
+Worker -> HTTPExec: Execute HTTP request
+activate HTTPExec
+
+HTTPExec -> HTTPExec: Build HTTP request:\n- Method: POST\n- URL: https://api.production.example.com/users\n- Headers: X-API-Key, Content-Type, Authorization\n- Body: {"name": "admin"}
+
+HTTPExec -> HTTPExec: Add authentication:\nAuthorization: Bearer {actual_token}
+
+HTTPExec -> HTTPExec: Set timeout: 300 seconds (configurable)
+
+HTTPExec -> API: POST /users\nHeaders: {...}\nBody: {"name": "admin"}
+activate API
+
+alt Request successful (2xx response)
+  API --> HTTPExec: 200 OK\n{"id": "123", "name": "admin", "created": true}
+  deactivate API
+  
+  HTTPExec --> Worker: Success\nResponse: {"id": "123", ...}
+  deactivate HTTPExec
+  
+  Worker -> CB: Record success
+  activate CB
+  CB -> CB: Reset failure count
+  deactivate CB
+  
+  Worker -> DB: UPDATE job_executions\nSET status = 'Success',\nresult = '{"id": "123", ...}',\ncompleted_at = NOW()
+  activate DB
+  DB --> Worker: Updated
+  deactivate DB
+  
+  Worker -> NATS: ACK message (success)
+  deactivate NATS
+  
+  Worker -> Observability: Log: "Job execution completed successfully"
+  Worker -> Observability: Increment job_success_total counter
+  Worker -> Observability: Record job_duration_seconds histogram
+  Worker -> Observability: Close OpenTelemetry span (status: OK)
+  
+  deactivate Worker
+
+else Request failed (4xx/5xx or network error)
+  API --> HTTPExec: 500 Internal Server Error\n{"error": "Database connection failed"}
+  deactivate API
+  
+  HTTPExec --> Worker: Error: HTTP 500\nResponse: {"error": "..."}
+  deactivate HTTPExec
+  
+  Worker -> CB: Record failure
+  activate CB
+  CB -> CB: Increment failure count
+  CB -> CB: Check if threshold exceeded (50% failure rate)
+  
+  alt Failure threshold exceeded
+    CB -> CB: Open circuit breaker
+    CB -> Observability: Log: "Circuit breaker opened for api.production.example.com"
+  end
+  deactivate CB
+  
+  Worker -> DB: UPDATE job_executions\nSET status = 'Failed',\nerror = 'HTTP 500: Database connection failed',\nattempt = attempt + 1,\ncompleted_at = NOW()
+  activate DB
+  DB --> Worker: Updated
+  deactivate DB
+  
+  Worker -> Retry: Handle failure with retry logic
+  activate Retry
+  
+  alt Attempt < max_retries (10)
+    Retry -> Retry: Calculate backoff delay:\nAttempt 1: 5s + jitter\nAttempt 2: 15s + jitter\nAttempt 3: 1m + jitter\nAttempt 4: 5m + jitter\nAttempt 5: 30m + jitter\n...
+    
+    Retry -> NATS: NACK message with delay\n(requeue for retry)
+    deactivate NATS
+    
+    Retry -> Observability: Log: "Job execution failed, retry scheduled"\n{attempt, next_retry_at}
+    
+    deactivate Retry
+    
+  else Attempt >= max_retries (10)
+    Retry -> DB: UPDATE job_executions\nSET status = 'DeadLetter'\nWHERE id = execution_id
+    activate DB
+    DB --> Retry: Updated
+    deactivate DB
+    
+    Retry -> NATS: ACK message (move to DLQ)
+    deactivate NATS
+    
+    Retry -> Observability: Log: "Job moved to Dead Letter Queue after 10 retries"
+    Retry -> Observability: Trigger alert: "Job failed 10 times"
+    
+    deactivate Retry
+  end
+  
+  Worker -> Observability: Increment job_failed_total counter
+  Worker -> Observability: Close OpenTelemetry span (status: ERROR)
+  
+  deactivate Worker
+end
+
+else Request timeout
+  HTTPExec -> HTTPExec: Timeout after 300 seconds
+  HTTPExec --> Worker: Error: Request timeout
+  deactivate HTTPExec
+  
+  Worker -> DB: UPDATE job_executions\nSET status = 'Timeout',\nerror = 'Request exceeded timeout (300s)',\ncompleted_at = NOW()
+  
+  Worker -> Retry: Handle timeout with retry logic
+  
+  Worker -> NATS: NACK message (requeue if retries remain)
+  deactivate NATS
+  
+  Worker -> Observability: Log: "Job execution timeout"
+  Worker -> Observability: Increment job_failed_total counter
+  
+  deactivate Worker
+end
+
+note over Worker, Observability
+  **Observability Data Collected:**
+  
+  ✓ Structured logs (JSON) with trace context
+  ✓ Prometheus metrics (counters, histograms)
+  ✓ OpenTelemetry traces (distributed tracing)
+  ✓ Alerts triggered on consecutive failures
+end note
+
+@enduml

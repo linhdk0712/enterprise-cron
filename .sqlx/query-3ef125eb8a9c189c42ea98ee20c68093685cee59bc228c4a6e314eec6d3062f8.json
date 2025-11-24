@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO webhooks (job_id, url_path, secret_key, enabled, rate_limit_max_requests, rate_limit_window_seconds)\n            VALUES ($1, $2, $3, true, $4, $5)\n            RETURNING id, job_id, url_path, secret_key, enabled, rate_limit_max_requests, rate_limit_window_seconds, created_at, updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "job_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "url_path",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "secret_key",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "rate_limit_max_requests",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "rate_limit_window_seconds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "3ef125eb8a9c189c42ea98ee20c68093685cee59bc228c4a6e314eec6d3062f8"
+}

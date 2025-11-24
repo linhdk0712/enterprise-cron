@@ -1,0 +1,347 @@
+@startuml Authentication & Authorization Use Cases - Detailed
+
+title Authentication & Authorization - Detailed Use Cases
+
+actor "System Administrator" as Admin
+actor "Security Administrator" as Security
+actor "API Client" as Client
+actor "Keycloak Server" as Keycloak
+
+rectangle "Authentication & Authorization Subsystem" {
+  
+  usecase "Authenticate User" as UC1 {
+    --
+    **Two Modes:**
+    1. Keycloak Mode (external IdP)
+    2. Database Mode (local users)
+    
+    Mode configured via AUTH_MODE env var
+    --
+    **Validates:** Req 10.1, 10.2
+  }
+  
+  usecase "Authenticate with Keycloak" as UC1_1 {
+    --
+    **Keycloak Flow:**
+    1. User logs in to Keycloak
+    2. Keycloak issues JWT token
+    3. Client includes token in requests
+    4. System validates token signature
+    5. System extracts user claims
+    --
+    **Validates:** Req 10.1, 10.12
+  }
+  
+  usecase "Authenticate with Database" as UC1_2 {
+    --
+    **Database Flow:**
+    1. User submits username/password
+    2. System queries users table
+    3. System validates bcrypt hash
+    4. System generates JWT token
+    5. System returns token to client
+    --
+    **Validates:** Req 10.2, 10.3, 10.13
+  }
+  
+  usecase "Validate JWT Token" as UC2 {
+    --
+    **Validation Steps:**
+    1. Extract token from Authorization header
+    2. Verify signature (Keycloak public key or system key)
+    3. Check expiration (exp claim)
+    4. Check issuer (iss claim)
+    5. Extract user claims (sub, permissions)
+    --
+    **Validates:** Req 10.1, 10.4
+  }
+  
+  usecase "Handle Invalid Token" as UC2_1 {
+    --
+    **Invalid Token Scenarios:**
+    - Expired token
+    - Invalid signature
+    - Malformed token
+    - Missing required claims
+    
+    **Response:** HTTP 401 Unauthorized
+    --
+    **Validates:** Req 10.4
+  }
+  
+  usecase "Cache Keycloak Public Keys" as UC2_2 {
+    --
+    **Resilience Mechanism:**
+    1. Fetch public keys from Keycloak
+    2. Cache with TTL (e.g., 1 hour)
+    3. If Keycloak unavailable:
+       - Use cached keys
+       - Log warning
+       - Continue validation
+    --
+    **Validates:** Req 10.11
+  }
+  
+  usecase "Check RBAC Permissions" as UC3 {
+    --
+    **Permission Check:**
+    1. Extract permissions from JWT
+    2. Check required permission for operation
+    3. Allow if permission present
+    4. Deny with 403 Forbidden if missing
+    --
+    **Validates:** Req 10.5-10.9
+  }
+  
+  usecase "Check job:read Permission" as UC3_1 {
+    --
+    Required for:
+    - View job list
+    - View job details
+    - View job configuration
+    --
+    **Validates:** Req 10.5
+  }
+  
+  usecase "Check job:write Permission" as UC3_2 {
+    --
+    Required for:
+    - Create new job
+    - Update job configuration
+    - Enable/disable job
+    --
+    **Validates:** Req 10.6
+  }
+  
+  usecase "Check job:execute Permission" as UC3_3 {
+    --
+    Required for:
+    - Manually trigger job
+    - Force job execution
+    --
+    **Validates:** Req 10.7
+  }
+  
+  usecase "Check job:delete Permission" as UC3_4 {
+    --
+    Required for:
+    - Delete job
+    - Permanently remove job
+    --
+    **Validates:** Req 10.8
+  }
+  
+  usecase "Check execution:read Permission" as UC3_5 {
+    --
+    Required for:
+    - View execution history
+    - View execution details
+    - View execution logs
+    --
+    **Validates:** Req 10.9
+  }
+  
+  usecase "Audit Log Operations" as UC4 {
+    --
+    **Audit Logging:**
+    1. Extract user identity from JWT
+    2. Log operation type
+    3. Log resource affected
+    4. Log timestamp
+    5. Log result (success/failure)
+    --
+    **Validates:** Req 10.10
+  }
+  
+  usecase "Manage Users (Database Mode)" as UC5 {
+    --
+    **User Management:**
+    - Create user with bcrypt password
+    - Update user details
+    - Disable/enable user
+    - Assign roles to user
+    - Remove user
+    --
+    **Validates:** Req 10.13
+  }
+  
+  usecase "Manage Roles (Database Mode)" as UC6 {
+    --
+    **Role Management:**
+    - Create role with permissions
+    - Update role permissions
+    - Delete role
+    - Assign role to users
+    --
+    **Validates:** Req 10.13
+  }
+  
+  usecase "Hash Password with bcrypt" as UC5_1 {
+    --
+    **Password Security:**
+    - Use bcrypt algorithm
+    - Cost factor: 12 (configurable)
+    - Never store plaintext passwords
+    - Salt automatically generated
+    --
+    **Validates:** Req 10.13
+  }
+  
+  usecase "Generate JWT Token" as UC5_2 {
+    --
+    **Token Generation (Database Mode):**
+    1. Load user and roles from database
+    2. Collect permissions from roles
+    3. Create JWT claims
+    4. Sign with system private key
+    5. Set expiration (default: 24 hours)
+    --
+    **Validates:** Req 10.3
+  }
+  
+  usecase "Configure Keycloak Integration" as UC7 {
+    --
+    **Configuration:**
+    - Keycloak server URL
+    - Realm name
+    - Client ID
+    - Client secret (if needed)
+    - Public key endpoint
+    --
+    **Validates:** Req 10.12
+  }
+}
+
+' Client relationships
+Client --> UC1
+Client --> UC2
+
+' Admin relationships
+Admin --> UC3_1
+Admin --> UC3_2
+Admin --> UC3_3
+Admin --> UC3_4
+Admin --> UC3_5
+
+' Security relationships
+Security --> UC5
+Security --> UC6
+Security --> UC7
+
+' External system relationships
+UC1_1 --> Keycloak : <<authenticates with>>
+UC2_2 --> Keycloak : <<fetches keys from>>
+
+' Include/Extend relationships
+UC1 ..> UC1_1 : <<extend>>
+UC1 ..> UC1_2 : <<extend>>
+
+UC1_1 ..> UC2 : <<include>>
+UC1_1 ..> UC7 : <<include>>
+
+UC1_2 ..> UC5_1 : <<include>>
+UC1_2 ..> UC5_2 : <<include>>
+
+UC2 ..> UC2_1 : <<extend>>
+UC2 ..> UC2_2 : <<extend>>
+
+UC3 ..> UC3_1 : <<extend>>
+UC3 ..> UC3_2 : <<extend>>
+UC3 ..> UC3_3 : <<extend>>
+UC3 ..> UC3_4 : <<extend>>
+UC3 ..> UC3_5 : <<extend>>
+UC3 ..> UC4 : <<include>>
+
+UC5 ..> UC5_1 : <<include>>
+UC6 ..> UC5 : <<include>>
+
+' Notes
+note right of UC1
+  **Authentication Modes:**
+  
+  Keycloak Mode:
+  - External identity provider
+  - SSO support
+  - Centralized user management
+  - Enterprise-grade
+  
+  Database Mode:
+  - Local user storage
+  - Simple deployment
+  - No external dependencies
+  - Good for small teams
+end note
+
+note right of UC2
+  **JWT Token Structure:**
+  
+  Header:
+  {
+    "alg": "RS256",
+    "typ": "JWT"
+  }
+  
+  Payload:
+  {
+    "sub": "user-id",
+    "username": "admin",
+    "permissions": ["job:read", "job:write"],
+    "exp": 1234567890,
+    "iat": 1234567890
+  }
+  
+  Signature: HMACSHA256(...)
+end note
+
+note bottom of UC3
+  **Permission Model:**
+  
+  Permissions are strings in format:
+  <resource>:<action>
+  
+  Examples:
+  - job:read
+  - job:write
+  - job:execute
+  - job:delete
+  - execution:read
+  - variable:read
+  - variable:write
+  
+  Roles contain arrays of permissions
+end note
+
+note bottom of UC2_2
+  **Keycloak Resilience:**
+  
+  If Keycloak is temporarily unavailable:
+  1. Use cached public keys (TTL: 1 hour)
+  2. Continue validating tokens
+  3. Log warning about Keycloak unavailability
+  4. System remains operational
+  
+  This prevents complete outage if
+  Keycloak has issues
+end note
+
+note bottom of UC5
+  **Database Schema:**
+  
+  users table:
+  - id (UUID)
+  - username (unique)
+  - password_hash (bcrypt)
+  - email
+  - enabled (boolean)
+  
+  roles table:
+  - id (UUID)
+  - name
+  - permissions (text[])
+  
+  user_roles table:
+  - user_id (FK)
+  - role_id (FK)
+end note
+
+@enduml

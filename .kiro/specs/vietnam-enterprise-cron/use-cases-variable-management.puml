@@ -1,0 +1,288 @@
+@startuml Variable Management Use Cases - Detailed
+
+title Variable Management - Detailed Use Cases
+
+actor "System Administrator" as Admin
+actor "Worker Process" as Worker
+
+rectangle "Variable Management Subsystem" {
+  
+  usecase "Create Global Variable" as UC1 {
+    --
+    **Primary Flow:**
+    1. Admin provides name and value
+    2. System validates uniqueness
+    3. System stores in database
+    4. Variable available to all jobs
+    --
+    **Validates:** Req 2.1
+  }
+  
+  usecase "Create Job-Specific Variable" as UC2 {
+    --
+    **Primary Flow:**
+    1. Admin provides job ID, name, value
+    2. System validates job exists
+    3. System stores with job association
+    4. Variable available only to that job
+    --
+    **Validates:** Req 2.2
+  }
+  
+  usecase "Update Variable Value" as UC3 {
+    --
+    **Primary Flow:**
+    1. Admin provides variable ID and new value
+    2. System updates in database
+    3. New value applies to future executions
+    4. No restart required
+    --
+    **Validates:** Req 2.6
+  }
+  
+  usecase "Delete Variable" as UC4 {
+    --
+    **Primary Flow:**
+    1. Admin provides variable ID
+    2. System checks if in use
+    3. System removes from database
+    4. Jobs referencing it will fail
+    --
+  }
+  
+  usecase "View Variables" as UC5 {
+    --
+    **Display:**
+    - Variable name
+    - Scope (Global/Job-specific)
+    - Value (masked if sensitive)
+    - Last updated timestamp
+    --
+    **Validates:** Req 2.8
+  }
+  
+  usecase "Mark Variable as Sensitive" as UC6 {
+    --
+    **Encryption Flow:**
+    1. Admin marks variable as sensitive
+    2. System encrypts value at rest
+    3. Value masked in UI/API responses
+    4. Decrypted only during execution
+    --
+    **Validates:** Req 2.7, 2.8
+  }
+  
+  usecase "Resolve Variables in Job" as UC7 {
+    --
+    **Worker Resolution Flow:**
+    1. Load global variables
+    2. Load job-specific variables
+    3. Merge with precedence rules
+    4. Substitute placeholders
+    5. Validate all variables exist
+    --
+    **Validates:** Req 2.3, 2.4, 2.5
+  }
+  
+  usecase "Apply Variable Precedence" as UC7_1 {
+    --
+    **Precedence Rules:**
+    1. Job-specific overrides global
+    2. If variable exists in both scopes,
+       use job-specific value
+    3. If only in one scope, use that value
+    --
+    **Validates:** Req 2.4
+  }
+  
+  usecase "Validate Variable Existence" as UC7_2 {
+    --
+    **Validation:**
+    1. Check all placeholders resolved
+    2. If any variable undefined:
+       - Fail execution
+       - Return clear error message
+       - Log missing variable name
+    --
+    **Validates:** Req 2.5
+  }
+  
+  usecase "Substitute in HTTP URL" as UC8 {
+    --
+    **URL Substitution:**
+    Template: https://api.example.com/{{env}}/users
+    Variable: env=production
+    Result: https://api.example.com/production/users
+    --
+    **Validates:** Req 2.9
+  }
+  
+  usecase "Substitute in HTTP Headers" as UC9 {
+    --
+    **Header Substitution:**
+    Template: X-API-Key: {{api_key}}
+    Variable: api_key=secret123
+    Result: X-API-Key: secret123
+    --
+    **Validates:** Req 2.10
+  }
+  
+  usecase "Substitute in HTTP Body" as UC10 {
+    --
+    **Body Substitution:**
+    Template: {"user": "{{username}}"}
+    Variable: username=admin
+    Result: {"user": "admin"}
+    --
+    **Validates:** Req 2.10
+  }
+  
+  usecase "Substitute in Connection String" as UC11 {
+    --
+    **Connection String Substitution:**
+    Template: postgresql://{{db_user}}:{{db_pass}}@{{db_host}}/{{db_name}}
+    Variables: db_user=app, db_pass=secret, db_host=localhost, db_name=prod
+    Result: postgresql://app:secret@localhost/prod
+    --
+    **Validates:** Req 2.11
+  }
+  
+  usecase "Substitute in SQL Query" as UC12 {
+    --
+    **Parameterized Query Substitution:**
+    Template: SELECT * FROM users WHERE status = {{status}}
+    Variable: status=active
+    Result: SELECT * FROM users WHERE status = $1
+    Params: ["active"]
+    
+    **Prevents SQL Injection!**
+    --
+    **Validates:** Req 2.12
+  }
+  
+  usecase "Encrypt/Decrypt Sensitive Data" as UC13 {
+    --
+    **Encryption:**
+    - Algorithm: AES-256-GCM
+    - Key management: Sealed secrets
+    - Encrypt at rest in database
+    - Decrypt only during execution
+    - Never log decrypted values
+    --
+    **Validates:** Req 2.7
+  }
+  
+  usecase "Mask Sensitive Values" as UC14 {
+    --
+    **Masking in Responses:**
+    Actual: password=MySecret123
+    Displayed: password=***
+    
+    Applied to:
+    - API responses
+    - Dashboard UI
+    - Log messages
+    --
+    **Validates:** Req 2.8
+  }
+  
+  usecase "Validate JWT Token" as UC_Auth
+  usecase "Check RBAC Permissions" as UC_RBAC
+  usecase "Store in System Database" as UC_DB
+}
+
+' Admin relationships
+Admin --> UC1
+Admin --> UC2
+Admin --> UC3
+Admin --> UC4
+Admin --> UC5
+Admin --> UC6
+
+' Worker relationships
+Worker --> UC7
+Worker --> UC8
+Worker --> UC9
+Worker --> UC10
+Worker --> UC11
+Worker --> UC12
+
+' Include/Extend relationships
+UC1 ..> UC6 : <<extend>>
+UC1 ..> UC_Auth : <<include>>
+UC1 ..> UC_RBAC : <<include>>
+UC1 ..> UC_DB : <<include>>
+
+UC2 ..> UC6 : <<extend>>
+UC2 ..> UC_Auth : <<include>>
+UC2 ..> UC_RBAC : <<include>>
+UC2 ..> UC_DB : <<include>>
+
+UC3 ..> UC_Auth : <<include>>
+UC3 ..> UC_RBAC : <<include>>
+UC3 ..> UC_DB : <<include>>
+
+UC4 ..> UC_Auth : <<include>>
+UC4 ..> UC_RBAC : <<include>>
+UC4 ..> UC_DB : <<include>>
+
+UC5 ..> UC14 : <<include>>
+UC5 ..> UC_Auth : <<include>>
+UC5 ..> UC_RBAC : <<include>>
+
+UC6 ..> UC13 : <<include>>
+
+UC7 ..> UC7_1 : <<include>>
+UC7 ..> UC7_2 : <<include>>
+UC7 ..> UC8 : <<extend>>
+UC7 ..> UC9 : <<extend>>
+UC7 ..> UC10 : <<extend>>
+UC7 ..> UC11 : <<extend>>
+UC7 ..> UC12 : <<extend>>
+UC7 ..> UC13 : <<include>>
+
+' Notes
+note right of UC7
+  **Variable Resolution Order:**
+  1. Load all global variables
+  2. Load job-specific variables
+  3. Merge (job-specific wins)
+  4. Find all placeholders {{var}}
+  5. Replace with actual values
+  6. Fail if any undefined
+end note
+
+note right of UC12
+  **SQL Injection Prevention:**
+  
+  NEVER use string concatenation!
+  
+  Always use parameterized queries:
+  - PostgreSQL: $1, $2, ...
+  - MySQL: ?, ?, ...
+  - Oracle: :1, :2, ...
+  
+  This prevents SQL injection attacks
+end note
+
+note bottom of UC13
+  **Sensitive Variable Security:**
+  
+  ✓ Encrypted at rest (AES-256-GCM)
+  ✓ Masked in UI/API (show ***)
+  ✓ Never logged in plaintext
+  ✓ Decrypted only during execution
+  ✓ Key rotation supported
+end note
+
+note bottom of UC7_1
+  **Precedence Example:**
+  
+  Global: api_url=https://prod.api.com
+  Job-specific: api_url=https://test.api.com
+  
+  Result for that job: https://test.api.com
+  Result for other jobs: https://prod.api.com
+end note
+
+@enduml

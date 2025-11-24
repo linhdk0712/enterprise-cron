@@ -1,0 +1,78 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# IDE and editor files
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Build artifacts
+target/
+**/target/
+*.o
+*.so
+*.dylib
+*.dll
+
+# Rust specific
+**/*.rs.bk
+# Cargo.lock - NEEDED for reproducible builds in Docker
+
+# Test files
+**/tests/
+**/*_test.rs
+**/*.proptest-regressions
+
+# Documentation
+README.md
+*.md
+!migrations/*.md
+docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Kiro specs
+.kiro/
+
+# Local configuration
+config/local.toml
+config/local.toml.example
+*.local.toml
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Docker files (don't need these in the build context)
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile*
+
+# Kubernetes/Helm
+charts/
+k8s/
+helm/
+
+# Scripts
+scripts/

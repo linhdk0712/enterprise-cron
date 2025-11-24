@@ -1,0 +1,324 @@
+@startuml Dashboard Real-time Updates with Server-Sent Events
+
+title Dashboard Real-time Updates - Server-Sent Events (SSE)
+
+actor "Admin User" as User
+participant "Browser" as Browser
+participant "HTMX" as HTMX
+participant "API Server\n(Axum)" as API
+participant "SSE Handler" as SSE
+participant "Event Broadcaster" as Broadcaster
+participant "PostgreSQL\n(System DB)" as DB
+participant "Worker Process" as Worker
+
+== Initial Dashboard Load ==
+
+User -> Browser: Navigate to dashboard
+Browser -> API: GET /dashboard\nAuthorization: Bearer {token}
+activate Browser
+activate API
+
+API -> API: Validate JWT token
+API -> API: Check job:read permission
+
+API -> DB: SELECT j.*, s.total_executions, s.successful_executions,\n       s.failed_executions, s.last_execution_at,\n       s.consecutive_failures\nFROM jobs j\nLEFT JOIN job_stats s ON j.id = s.job_id\nORDER BY j.created_at DESC
+activate DB
+DB --> API: List of jobs with statistics
+deactivate DB
+
+API -> API: Render HTMX template:\n- Job list table\n- Statistics cards\n- SSE connection script
+
+API --> Browser: 200 OK\nHTML with HTMX attributes
+deactivate API
+
+Browser -> Browser: Render dashboard
+
+== Establish SSE Connection ==
+
+Browser -> HTMX: Initialize SSE connection
+activate HTMX
+
+HTMX -> API: GET /api/events/stream\nAuthorization: Bearer {token}\nAccept: text/event-stream
+activate API
+
+API -> API: Validate JWT token
+API -> API: Check execution:read permission
+
+API -> SSE: Create SSE connection for user
+activate SSE
+
+SSE -> Broadcaster: Subscribe to events:\n- job_status_changed\n- execution_started\n- execution_completed\n- job_created\n- job_updated\n- job_deleted
+activate Broadcaster
+
+Broadcaster --> SSE: Subscription created
+SSE --> API: SSE stream established
+API --> HTMX: 200 OK\nContent-Type: text/event-stream\nCache-Control: no-cache\nConnection: keep-alive
+
+note over HTMX, API
+  SSE connection established
+  Server can now push events to client
+end note
+
+== Job Execution Starts (Worker Event) ==
+
+Worker -> DB: UPDATE job_executions\nSET status = 'Running', started_at = NOW()\nWHERE id = execution_id
+activate Worker
+activate DB
+DB --> Worker: Updated
+deactivate DB
+
+Worker -> Broadcaster: Publish event:\n{\n  "type": "execution_started",\n  "job_id": "job-uuid",\n  "execution_id": "exec-uuid",\n  "job_name": "daily-report",\n  "started_at": "2025-01-20T10:00:00Z"\n}
+deactivate Worker
+
+Broadcaster -> Broadcaster: Broadcast to all subscribed SSE connections
+
+Broadcaster -> SSE: Event: execution_started
+deactivate Broadcaster
+
+SSE -> SSE: Format SSE message:\nevent: execution_started\ndata: {"job_id": "job-uuid", "execution_id": "exec-uuid", ...}\nid: 12345\n\n
+
+SSE -> API: Send SSE message
+deactivate SSE
+
+API -> HTMX: Push SSE event
+deactivate API
+
+HTMX -> HTMX: Receive SSE event
+
+HTMX -> Browser: Update DOM:\n- Change job status to "Running"\n- Show spinner icon\n- Update "Last Run" timestamp\n- Highlight row
+deactivate HTMX
+
+Browser -> User: Visual update (no page reload!)
+
+note over Browser
+  **HTMX Magic:**
+  No JavaScript needed!
+  HTMX automatically updates DOM
+  based on SSE events
+end note
+
+== Job Execution Completes (Worker Event) ==
+
+Worker -> DB: UPDATE job_executions\nSET status = 'Success',\nresult = '...',\ncompleted_at = NOW()\nWHERE id = execution_id
+activate Worker
+activate DB
+DB --> Worker: Updated
+deactivate DB
+
+Worker -> DB: UPDATE job_stats\nSET total_executions = total_executions + 1,\nsuccessful_executions = successful_executions + 1,\nlast_execution_at = NOW(),\nlast_success_at = NOW(),\nconsecutive_failures = 0\nWHERE job_id = job_id
+activate DB
+DB --> Worker: Updated
+deactivate DB
+
+Worker -> Broadcaster: Publish event:\n{\n  "type": "execution_completed",\n  "job_id": "job-uuid",\n  "execution_id": "exec-uuid",\n  "job_name": "daily-report",\n  "status": "Success",\n  "duration": 2.3,\n  "completed_at": "2025-01-20T10:00:02Z"\n}
+deactivate Worker
+
+Broadcaster -> SSE: Event: execution_completed
+activate Broadcaster
+activate SSE
+
+SSE -> SSE: Format SSE message:\nevent: execution_completed\ndata: {"job_id": "job-uuid", "status": "Success", ...}\nid: 12346\n\n
+
+SSE -> API: Send SSE message
+deactivate SSE
+activate API
+
+API -> HTMX: Push SSE event
+deactivate API
+activate HTMX
+
+HTMX -> HTMX: Receive SSE event
+
+HTMX -> Browser: Update DOM:\n- Change status to "Success"\n- Show checkmark icon\n- Update statistics (success count, success rate)\n- Update "Last Success" timestamp\n- Remove highlight
+deactivate HTMX
+
+Browser -> User: Visual update (< 1 second latency!)
+
+== User Triggers Manual Job Execution ==
+
+User -> Browser: Click "Run Now" button
+Browser -> HTMX: Handle button click
+activate HTMX
+
+HTMX -> API: POST /api/jobs/{job_id}/trigger\nAuthorization: Bearer {token}\nhx-post="/api/jobs/{job_id}/trigger"\nhx-swap="outerHTML"
+activate API
+
+API -> API: Validate JWT token
+API -> API: Check job:execute permission
+
+API -> DB: INSERT INTO job_executions\n(id, job_id, idempotency_key, status)\nVALUES (uuid, job_id, idem_key, 'Pending')
+activate DB
+DB --> API: Execution created
+deactivate DB
+
+API -> Broadcaster: Publish event:\n{\n  "type": "execution_started",\n  "job_id": "job-uuid",\n  "execution_id": "new-exec-uuid",\n  "triggered_by": "admin",\n  "manual": true\n}
+activate Broadcaster
+
+Broadcaster -> SSE: Event: execution_started
+activate SSE
+
+SSE -> API: Send SSE message
+deactivate SSE
+
+API -> HTMX: Push SSE event
+API --> HTMX: 200 OK\nHTML fragment (updated button state)
+deactivate API
+
+HTMX -> Browser: Update button:\n"Run Now" → "Running..." (disabled)
+deactivate HTMX
+
+Broadcaster -> Broadcaster: Broadcast to all connected clients
+deactivate Broadcaster
+
+Browser -> User: Immediate feedback
+
+note over Browser, User
+  All connected users see the update
+  in real-time, not just the user
+  who triggered the job
+end note
+
+== Job Status Change (Enable/Disable) ==
+
+User -> Browser: Toggle "Enabled" switch
+Browser -> HTMX: Handle toggle
+activate HTMX
+
+HTMX -> API: PATCH /api/jobs/{job_id}\nBody: {"enabled": false}
+activate API
+
+API -> DB: UPDATE jobs SET enabled = false WHERE id = job_id
+activate DB
+DB --> API: Updated
+deactivate DB
+
+API -> Broadcaster: Publish event:\n{\n  "type": "job_status_changed",\n  "job_id": "job-uuid",\n  "job_name": "daily-report",\n  "enabled": false,\n  "changed_by": "admin"\n}
+activate Broadcaster
+
+Broadcaster -> SSE: Event: job_status_changed
+activate SSE
+
+SSE -> API: Send SSE message
+deactivate SSE
+
+API -> HTMX: Push SSE event
+API --> HTMX: 200 OK
+deactivate API
+
+HTMX -> Browser: Update UI:\n- Gray out job row\n- Show "Disabled" badge\n- Update toggle state
+deactivate HTMX
+
+Broadcaster -> Broadcaster: Broadcast to all clients
+deactivate Broadcaster
+
+Browser -> User: Visual feedback
+
+== Connection Management ==
+
+note over Browser, API
+  **SSE Connection Lifecycle:**
+  
+  1. Connection established on dashboard load
+  2. Server sends heartbeat every 30 seconds
+  3. Client automatically reconnects if connection drops
+  4. Connection closed when user leaves dashboard
+  
+  **Heartbeat:**
+  event: heartbeat
+  data: {"timestamp": "2025-01-20T10:00:00Z"}
+  id: 12347
+  
+  Keeps connection alive and detects disconnections
+end note
+
+loop Every 30 seconds
+  SSE -> API: Send heartbeat
+  activate SSE
+  activate API
+  API -> HTMX: Push heartbeat event
+  deactivate API
+  HTMX -> HTMX: Update connection status indicator
+  deactivate SSE
+end
+
+== Connection Failure & Reconnection ==
+
+alt Connection drops
+  API -> HTMX: Connection closed (network error)
+  activate API
+  activate HTMX
+  
+  HTMX -> Browser: Show "Reconnecting..." indicator
+  
+  HTMX -> HTMX: Wait 3 seconds
+  
+  HTMX -> API: GET /api/events/stream\nLast-Event-ID: 12347
+  
+  note over HTMX, API
+    Last-Event-ID header allows server
+    to replay missed events
+  end note
+  
+  API -> SSE: Restore connection
+  activate SSE
+  
+  SSE -> SSE: Replay events since ID 12347
+  
+  SSE -> API: Send missed events
+  deactivate SSE
+  
+  API -> HTMX: Reconnected + missed events
+  deactivate API
+  
+  HTMX -> Browser: Update UI with missed events
+  HTMX -> Browser: Hide "Reconnecting..." indicator
+  deactivate HTMX
+end
+
+== User Leaves Dashboard ==
+
+User -> Browser: Navigate away or close tab
+Browser -> Browser: Unload event
+
+Browser -> HTMX: Close SSE connection
+activate HTMX
+
+HTMX -> API: Close connection
+activate API
+
+API -> SSE: Unsubscribe from events
+activate SSE
+
+SSE -> Broadcaster: Remove subscription
+activate Broadcaster
+Broadcaster --> SSE: Unsubscribed
+deactivate Broadcaster
+
+SSE --> API: Connection closed
+deactivate SSE
+
+API --> HTMX: Connection closed
+deactivate API
+deactivate HTMX
+
+deactivate Browser
+
+note over Browser, Broadcaster
+  **Benefits of SSE:**
+  
+  ✓ Real-time updates without polling
+  ✓ Efficient (single long-lived connection)
+  ✓ Automatic reconnection
+  ✓ Event replay with Last-Event-ID
+  ✓ Simple protocol (text-based)
+  ✓ Works with HTMX (no JavaScript needed)
+  ✓ Scales well (thousands of connections)
+  
+  **vs WebSocket:**
+  - SSE: Unidirectional (server → client)
+  - WebSocket: Bidirectional
+  - SSE: Simpler for this use case
+  - SSE: Better browser support
+end note
+
+@enduml

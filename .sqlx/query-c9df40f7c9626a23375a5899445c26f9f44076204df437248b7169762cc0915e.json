@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE webhooks\n            SET rate_limit_max_requests = $2, rate_limit_window_seconds = $3, updated_at = NOW()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c9df40f7c9626a23375a5899445c26f9f44076204df437248b7169762cc0915e"
+}

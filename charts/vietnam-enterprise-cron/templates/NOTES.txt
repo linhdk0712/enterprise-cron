@@ -1,0 +1,95 @@
+🎉 Vietnam Enterprise Cron System has been deployed!
+
+Chart Version: {{ .Chart.Version }}
+App Version: {{ .Chart.AppVersion }}
+Release Name: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+📊 Components Deployed:
+{{- if .Values.scheduler.enabled }}
+  ✓ Scheduler ({{ .Values.scheduler.replicaCount }} replicas)
+{{- end }}
+{{- if .Values.worker.enabled }}
+  ✓ Worker ({{ .Values.worker.replicaCount }} replicas)
+{{- end }}
+{{- if .Values.api.enabled }}
+  ✓ API Server ({{ .Values.api.replicaCount }} replicas)
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+  ✓ PostgreSQL Database
+{{- end }}
+{{- if .Values.redis.enabled }}
+  ✓ Redis (Distributed Locking)
+{{- end }}
+{{- if .Values.nats.enabled }}
+  ✓ NATS JetStream (Job Queue)
+{{- end }}
+{{- if .Values.minio.enabled }}
+  ✓ MinIO (Object Storage)
+{{- end }}
+
+🌐 Access the Dashboard:
+{{- if .Values.api.ingress.enabled }}
+{{- range $host := .Values.api.ingress.hosts }}
+  Dashboard URL: http{{ if $.Values.api.ingress.tls }}s{{ end }}://{{ $host.host }}{{ (index $host.paths 0).path }}
+{{- end }}
+{{- else if contains "NodePort" .Values.api.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "vietnam-cron.fullname" . }}-api)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo "Dashboard URL: http://$NODE_IP:$NODE_PORT"
+{{- else if contains "LoadBalancer" .Values.api.service.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "vietnam-cron.fullname" . }}-api --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo "Dashboard URL: http://$SERVICE_IP:{{ .Values.api.service.port }}"
+{{- else if contains "ClusterIP" .Values.api.service.type }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "vietnam-cron.fullname" . }}-api 8080:{{ .Values.api.service.port }}
+  echo "Dashboard URL: http://127.0.0.1:8080"
+{{- end }}
+
+📈 Prometheus Metrics:
+{{- if .Values.observability.metricsEnabled }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "vietnam-cron.fullname" . }}-api 9090:{{ .Values.api.service.metricsPort }}
+  echo "Metrics URL: http://127.0.0.1:9090/metrics"
+{{- end }}
+
+🔐 Authentication Mode: {{ .Values.auth.mode }}
+{{- if eq .Values.auth.mode "database" }}
+
+  To create an admin user, run:
+  kubectl --namespace {{ .Release.Namespace }} exec -it deployment/{{ include "vietnam-cron.fullname" . }}-api -- \
+    sh -c 'curl -X POST http://localhost:8080/api/users -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"password\":\"changeme\",\"email\":\"admin@example.com\"}"'
+{{- else if eq .Values.auth.mode "keycloak" }}
+
+  Keycloak Server: {{ .Values.auth.keycloak.serverUrl }}
+  Realm: {{ .Values.auth.keycloak.realm }}
+  Client ID: {{ .Values.auth.keycloak.clientId }}
+{{- end }}
+
+📚 Documentation:
+  - GitHub: https://github.com/vietnam-enterprise/cron-system
+  - README: https://github.com/vietnam-enterprise/cron-system/blob/main/README.md
+
+🔍 Check Component Status:
+  kubectl --namespace {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+📝 View Logs:
+  # Scheduler logs
+  kubectl --namespace {{ .Release.Namespace }} logs -l app.kubernetes.io/component=scheduler -f
+
+  # Worker logs
+  kubectl --namespace {{ .Release.Namespace }} logs -l app.kubernetes.io/component=worker -f
+
+  # API logs
+  kubectl --namespace {{ .Release.Namespace }} logs -l app.kubernetes.io/component=api -f
+
+⚙️  Configuration:
+  To update configuration, edit the values and upgrade:
+  helm upgrade {{ .Release.Name }} vietnam-enterprise-cron/vietnam-enterprise-cron -f custom-values.yaml
+
+🛠️  Troubleshooting:
+  If pods are not starting, check:
+  1. Database connectivity: kubectl --namespace {{ .Release.Namespace }} logs deployment/{{ include "vietnam-cron.fullname" . }}-api
+  2. Resource limits: kubectl --namespace {{ .Release.Namespace }} describe pod -l app.kubernetes.io/instance={{ .Release.Name }}
+  3. Secrets: kubectl --namespace {{ .Release.Namespace }} get secrets
+
+Happy scheduling! 🚀

@@ -1,0 +1,481 @@
+@startuml Job Import/Export Flow
+
+title Job Import/Export - Visual Builder and JSON File Management
+
+actor "System Administrator" as Admin
+participant "Browser" as Browser
+participant "Dashboard UI\n(HTMX)" as Dashboard
+participant "API Server" as API
+participant "Job Validator" as Validator
+participant "MinIO" as MinIO
+participant "PostgreSQL\n(System DB)" as DB
+
+== Visual Job Creation ==
+
+Admin -> Dashboard: Navigate to "Create Job" page
+activate Admin
+activate Dashboard
+
+Dashboard --> Admin: Display visual job builder form
+
+note over Dashboard
+  **Visual Job Builder UI:**
+  
+  Form Sections:
+  1. Basic Info (name, description)
+  2. Schedule Configuration
+     - Type: Cron/Fixed Delay/Fixed Rate/One-Time
+     - Timezone selector
+     - End date (optional)
+  3. Trigger Methods
+     - ☑ Scheduled
+     - ☑ Manual
+     - ☑ Webhook
+  4. Job Steps Builder
+     - Add Step button
+     - Step type selector (HTTP/Database/File)
+     - Step configuration forms
+     - Drag-and-drop reordering
+  5. Variables
+     - Global variables selector
+     - Job-specific variables
+  6. Advanced Settings
+     - Timeout, max retries
+     - Concurrent execution
+end note
+
+Admin -> Dashboard: Fill form:\n- Name: "Daily User Sync"\n- Schedule: Cron "0 0 2 * * *"\n- Add Step 1: HTTP Request\n- Add Step 2: Database Query\n- Add Step 3: File Processing
+
+Dashboard -> Dashboard: Build JSON definition from form data
+
+note over Dashboard
+  **Generated JSON (client-side):**
+  {
+    "name": "Daily User Sync",
+    "description": "Sync users from API to database",
+    "schedule": {
+      "type": "Cron",
+      "expression": "0 0 2 * * *",
+      "timezone": "Asia/Ho_Chi_Minh"
+    },
+    "triggers": {
+      "scheduled": true,
+      "manual": true,
+      "webhook": true
+    },
+    "steps": [
+      {
+        "id": "step1",
+        "name": "fetch-users",
+        "type": "HttpRequest",
+        "config": {
+          "method": "GET",
+          "url": "https://api.example.com/users",
+          "headers": {
+            "Authorization": "Bearer {{api_token}}"
+          }
+        }
+      },
+      {
+        "id": "step2",
+        "name": "insert-users",
+        "type": "DatabaseQuery",
+        "config": {
+          "database_type": "PostgreSQL",
+          "connection_string": "postgresql://{{db_user}}:{{db_pass}}@{{db_host}}/{{db_name}}",
+          "query": "INSERT INTO users VALUES {{steps.step1.response.data}}"
+        }
+      },
+      {
+        "id": "step3",
+        "name": "generate-report",
+        "type": "FileProcessing",
+        "config": {
+          "operation": "write",
+          "format": "csv",
+          "data_source": "{{steps.step2.inserted_rows}}",
+          "filename": "sync-report-{{execution_id}}.csv"
+        }
+      }
+    ],
+    "timeout_seconds": 600,
+    "max_retries": 3,
+    "concurrent_execution": false
+  }
+end note
+
+Admin -> Dashboard: Click "Preview JSON" button
+
+Dashboard --> Admin: Show JSON preview in modal
+
+Admin -> Dashboard: Click "Create Job" button
+
+Dashboard -> API: POST /api/jobs\nBody: JSON job definition
+activate API
+
+API -> Validator: Validate JSON schema
+activate Validator
+Validator --> API: Valid
+deactivate Validator
+
+API -> MinIO: Store job definition
+activate MinIO
+MinIO --> API: Stored at jobs/{job_id}/definition.json
+deactivate MinIO
+
+API -> DB: Insert job metadata
+activate DB
+DB --> API: Job created
+deactivate DB
+
+API --> Dashboard: 201 Created\n{job_id, webhook_url}
+deactivate API
+
+Dashboard --> Admin: Show success message\n"Job created successfully"
+deactivate Dashboard
+deactivate Admin
+
+== Export Job to JSON File ==
+
+Admin -> Dashboard: Navigate to job details page
+activate Admin
+activate Dashboard
+
+Dashboard --> Admin: Display job details with "Export" button
+
+Admin -> Dashboard: Click "Export Job" button
+
+Dashboard -> API: GET /api/jobs/{job_id}/export
+activate API
+
+API -> DB: SELECT * FROM jobs WHERE id = job_id
+activate DB
+DB --> API: Job metadata
+deactivate DB
+
+API -> MinIO: GET jobs/{job_id}/definition.json
+activate MinIO
+MinIO --> API: Job definition JSON
+deactivate MinIO
+
+API -> API: Sanitize sensitive data:\n- Replace passwords with "***REDACTED***"\n- Replace API keys with "***REDACTED***"\n- Replace tokens with "***REDACTED***"
+
+API -> API: Add export metadata:\n{\n  "export_metadata": {\n    "export_date": "2025-01-20T10:00:00Z",\n    "exported_by": "admin",\n    "system_version": "1.0.0",\n    "job_id": "550e8400-...",\n    "original_created_at": "2025-01-15T08:00:00Z"\n  },\n  "job_definition": {...}\n}
+
+API --> Dashboard: 200 OK\nContent-Type: application/json\nContent-Disposition: attachment; filename="job-daily-user-sync-20250120.json"\nBody: Sanitized JSON with metadata
+deactivate API
+
+Dashboard -> Browser: Trigger file download
+activate Browser
+Browser --> Admin: Download file: job-daily-user-sync-20250120.json
+deactivate Browser
+
+deactivate Dashboard
+deactivate Admin
+
+note over Admin
+  **Downloaded JSON File:**
+  {
+    "export_metadata": {
+      "export_date": "2025-01-20T10:00:00Z",
+      "exported_by": "admin",
+      "system_version": "1.0.0",
+      "job_id": "550e8400-...",
+      "original_created_at": "2025-01-15T08:00:00Z"
+    },
+    "job_definition": {
+      "name": "Daily User Sync",
+      "schedule": {...},
+      "steps": [
+        {
+          "config": {
+            "headers": {
+              "Authorization": "Bearer ***REDACTED***"
+            }
+          }
+        },
+        {
+          "config": {
+            "connection_string": "postgresql://***REDACTED***:***REDACTED***@{{db_host}}/{{db_name}}"
+          }
+        }
+      ]
+    }
+  }
+end note
+
+== Import Job from JSON File ==
+
+Admin -> Dashboard: Navigate to "Import Job" page
+activate Admin
+activate Dashboard
+
+Dashboard --> Admin: Display file upload interface
+
+Admin -> Dashboard: Click "Choose File" and select JSON file
+
+Admin -> Dashboard: Click "Upload" button
+
+Dashboard -> API: POST /api/jobs/import\nContent-Type: multipart/form-data\nFile: job-daily-user-sync-20250120.json
+activate API
+
+API -> API: Read uploaded file content
+
+API -> Validator: Validate JSON schema
+activate Validator
+
+alt Invalid JSON format
+  Validator --> API: Error: Invalid JSON syntax
+  API --> Dashboard: 400 Bad Request\n{\n  "error": "Invalid JSON format",\n  "details": "Unexpected token at line 15"\n}
+  deactivate API
+  Dashboard --> Admin: Show error message
+  deactivate Dashboard
+  deactivate Admin
+  deactivate Validator
+  
+else Invalid schema
+  Validator --> API: Error: Schema validation failed
+  API --> Dashboard: 400 Bad Request\n{\n  "error": "Invalid job definition schema",\n  "details": [\n    "steps[0].config.method: Required field missing",\n    "schedule.expression: Invalid cron expression"\n  ]\n}
+  deactivate API
+  Dashboard --> Admin: Show validation errors
+  deactivate Dashboard
+  deactivate Admin
+  deactivate Validator
+  
+else Valid schema
+  Validator --> API: Valid schema
+  deactivate Validator
+  
+  API -> API: Detect redacted sensitive fields:\n- Authorization: "Bearer ***REDACTED***"\n- connection_string contains ***REDACTED***
+  
+  API --> Dashboard: 200 OK\n{\n  "validation": "success",\n  "sensitive_fields": [\n    "steps[0].config.headers.Authorization",\n    "steps[1].config.connection_string"\n  ],\n  "requires_input": true\n}
+  deactivate API
+  
+  Dashboard --> Admin: Show form to input sensitive values:\n\n"Please provide values for sensitive fields:"\n\n1. Step 1 - Authorization Token:\n   [___________________________]\n\n2. Step 2 - Database User:\n   [___________________________]\n\n3. Step 2 - Database Password:\n   [___________________________] (password field)
+  
+  Admin -> Dashboard: Fill in sensitive values:\n- Authorization: "Bearer real_token_xyz"\n- DB User: "app_user"\n- DB Password: "secure_password"
+  
+  Admin -> Dashboard: Click "Import Job" button
+  
+  Dashboard -> API: POST /api/jobs/import/confirm\nBody: {\n  "job_definition": {...},\n  "sensitive_values": {\n    "steps[0].config.headers.Authorization": "Bearer real_token_xyz",\n    "steps[1].config.connection_string.user": "app_user",\n    "steps[1].config.connection_string.password": "secure_password"\n  }\n}
+  activate API
+  
+  API -> API: Merge sensitive values into job definition
+  
+  API -> API: Generate new job_id (don't reuse original)
+  
+  API -> DB: Check if job name exists
+  activate DB
+  
+  alt Job name exists
+    DB --> API: Job with name "Daily User Sync" exists
+    deactivate DB
+    
+    API -> API: Append suffix: "Daily User Sync (Copy 1)"
+    
+  else Job name unique
+    DB --> API: Name available
+    deactivate DB
+  end
+  
+  API -> MinIO: PUT jobs/{new_job_id}/definition.json\nBody: Complete job definition with sensitive values
+  activate MinIO
+  MinIO --> API: Stored
+  deactivate MinIO
+  
+  API -> DB: INSERT INTO jobs\n(id, name, minio_definition_path, ...)\nVALUES (new_job_id, 'Daily User Sync (Copy 1)', ...)
+  activate DB
+  DB --> API: Job created
+  deactivate DB
+  
+  API --> Dashboard: 201 Created\n{\n  "job_id": "new-job-uuid",\n  "name": "Daily User Sync (Copy 1)",\n  "message": "Job imported successfully"\n}
+  deactivate API
+  
+  Dashboard --> Admin: Show success message:\n"Job imported successfully as 'Daily User Sync (Copy 1)'"\n\n[View Job] button
+  
+  deactivate Dashboard
+  deactivate Admin
+end
+
+== Bulk Export (Multiple Jobs) ==
+
+Admin -> Dashboard: Select multiple jobs (checkboxes)
+activate Admin
+activate Dashboard
+
+Admin -> Dashboard: Click "Export Selected" button
+
+Dashboard -> API: POST /api/jobs/export/bulk\nBody: {\n  "job_ids": ["job-1", "job-2", "job-3"],\n  "format": "zip"\n}
+activate API
+
+loop For each job_id
+  API -> DB: Get job metadata
+  activate DB
+  DB --> API: Job metadata
+  deactivate DB
+  
+  API -> MinIO: Get job definition
+  activate MinIO
+  MinIO --> API: Job definition
+  deactivate MinIO
+  
+  API -> API: Sanitize sensitive data
+end
+
+API -> API: Create ZIP archive:\n- job-daily-user-sync-20250120.json\n- job-weekly-report-20250120.json\n- job-data-cleanup-20250120.json\n- README.txt (import instructions)
+
+API --> Dashboard: 200 OK\nContent-Type: application/zip\nContent-Disposition: attachment; filename="jobs-export-20250120.zip"\nBody: ZIP file
+deactivate API
+
+Dashboard -> Browser: Trigger ZIP download
+activate Browser
+Browser --> Admin: Download: jobs-export-20250120.zip
+deactivate Browser
+
+deactivate Dashboard
+deactivate Admin
+
+== Bulk Import (Multiple Jobs) ==
+
+Admin -> Dashboard: Upload ZIP file or JSON array
+activate Admin
+activate Dashboard
+
+Dashboard -> API: POST /api/jobs/import/bulk\nFile: jobs-export-20250120.zip
+activate API
+
+API -> API: Extract ZIP contents:\n- job-daily-user-sync-20250120.json\n- job-weekly-report-20250120.json\n- job-data-cleanup-20250120.json
+
+loop For each JSON file
+  API -> Validator: Validate job definition
+  activate Validator
+  
+  alt Valid
+    Validator --> API: Valid
+    deactivate Validator
+    
+    API -> API: Process import (create job)
+    API -> API: Record result: Success
+    
+  else Invalid
+    Validator --> API: Invalid schema
+    deactivate Validator
+    
+    API -> API: Record result: Failed (validation error)
+  end
+end
+
+API --> Dashboard: 200 OK\n{\n  "total": 3,\n  "successful": 2,\n  "failed": 1,\n  "results": [\n    {\n      "filename": "job-daily-user-sync-20250120.json",\n      "status": "success",\n      "job_id": "new-job-1"\n    },\n    {\n      "filename": "job-weekly-report-20250120.json",\n      "status": "success",\n      "job_id": "new-job-2"\n    },\n    {\n      "filename": "job-data-cleanup-20250120.json",\n      "status": "failed",\n      "error": "Invalid cron expression"\n    }\n  ]\n}
+deactivate API
+
+Dashboard --> Admin: Show import summary:\n\n"Import Results:"\n✓ 2 jobs imported successfully\n✗ 1 job failed\n\n[View Details] button
+
+deactivate Dashboard
+deactivate Admin
+
+== Version Control Integration ==
+
+note over Admin, MinIO
+  **Git Integration (Optional):**
+  
+  1. Export jobs to JSON files
+  2. Commit to Git repository
+  3. Track changes over time
+  4. Code review for job changes
+  5. Rollback to previous versions
+  
+  **Example Workflow:**
+  ```bash
+  # Export all jobs
+  curl -X POST https://api.example.com/api/jobs/export/bulk \
+    -H "Authorization: Bearer token" \
+    -o jobs-backup.zip
+  
+  # Extract and commit
+  unzip jobs-backup.zip -d jobs/
+  git add jobs/
+  git commit -m "Backup jobs - 2025-01-20"
+  git push origin main
+  
+  # Later: Import from Git
+  curl -X POST https://api.example.com/api/jobs/import/bulk \
+    -H "Authorization: Bearer token" \
+    -F "file=@jobs/job-daily-user-sync.json"
+  ```
+  
+  **Benefits:**
+  - Job definitions as code
+  - Change history and audit trail
+  - Collaboration and review
+  - Disaster recovery
+  - Environment promotion (dev → staging → prod)
+end note
+
+== JSON Schema Validation ==
+
+note over Validator
+  **Job Definition JSON Schema:**
+  
+  ```json
+  {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "required": ["name", "schedule", "steps"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      },
+      "description": {
+        "type": "string"
+      },
+      "schedule": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "enum": ["Cron", "FixedDelay", "FixedRate", "OneTime"]
+          },
+          "expression": {"type": "string"},
+          "timezone": {"type": "string"},
+          "end_date": {"type": "string", "format": "date-time"}
+        }
+      },
+      "steps": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": ["id", "name", "type", "config"],
+          "properties": {
+            "id": {"type": "string"},
+            "name": {"type": "string"},
+            "type": {
+              "enum": ["HttpRequest", "DatabaseQuery", "FileProcessing"]
+            },
+            "config": {"type": "object"}
+          }
+        }
+      },
+      "timeout_seconds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 86400
+      },
+      "max_retries": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10
+      }
+    }
+  }
+  ```
+  
+  **Validation Errors:**
+  - Clear error messages with field paths
+  - Suggestions for fixing common errors
+  - Examples of valid values
+end note
+
+@enduml

@@ -1,0 +1,201 @@
+@startuml Vietnam Enterprise Cron - Use Cases Overview
+
+' Actors
+actor "System Administrator" as Admin
+actor "Platform Engineer" as Engineer
+actor "DevOps Engineer" as DevOps
+actor "Security Administrator" as Security
+actor "Scheduler Process" as Scheduler
+actor "Worker Process" as Worker
+
+' External Systems
+actor "Keycloak" as Keycloak
+actor "Target Database\n(Oracle/MySQL/PostgreSQL)" as TargetDB
+actor "External HTTP API" as ExternalAPI
+actor "Monitoring System\n(Prometheus/Grafana)" as Monitoring
+
+' System Boundary
+rectangle "Vietnam Enterprise Cron System" {
+  
+  ' Job Management Use Cases
+  package "Job Management" {
+    usecase "Create Job" as UC1
+    usecase "Update Job" as UC2
+    usecase "Delete Job" as UC3
+    usecase "Enable/Disable Job" as UC4
+    usecase "View Job List" as UC5
+    usecase "Trigger Job Manually" as UC6
+    usecase "Configure Job Schedule" as UC7
+  }
+  
+  ' Variable Management Use Cases
+  package "Variable Management" {
+    usecase "Create Global Variable" as UC8
+    usecase "Create Job-Specific Variable" as UC9
+    usecase "Update Variable" as UC10
+    usecase "Delete Variable" as UC11
+    usecase "View Variables" as UC12
+    usecase "Encrypt Sensitive Variable" as UC13
+  }
+  
+  ' Job Execution Use Cases
+  package "Job Execution" {
+    usecase "Schedule Job Execution" as UC14
+    usecase "Execute HTTP Request Job" as UC15
+    usecase "Execute Database Query Job" as UC16
+    usecase "Resolve Variables" as UC17
+    usecase "Retry Failed Job" as UC18
+    usecase "Handle Timeout" as UC19
+    usecase "Move to Dead Letter Queue" as UC20
+  }
+  
+  ' Monitoring & Observability Use Cases
+  package "Monitoring & Observability" {
+    usecase "View Execution History" as UC21
+    usecase "View Job Statistics" as UC22
+    usecase "Export Metrics" as UC23
+    usecase "Generate Traces" as UC24
+    usecase "Trigger Alerts" as UC25
+    usecase "View Real-time Updates" as UC26
+  }
+  
+  ' Authentication & Authorization Use Cases
+  package "Authentication & Authorization" {
+    usecase "Authenticate with Keycloak" as UC27
+    usecase "Authenticate with Database" as UC28
+    usecase "Validate JWT Token" as UC29
+    usecase "Check Permissions (RBAC)" as UC30
+    usecase "Manage Users" as UC31
+    usecase "Manage Roles" as UC32
+  }
+  
+  ' Distributed Coordination Use Cases
+  package "Distributed Coordination" {
+    usecase "Acquire Distributed Lock" as UC33
+    usecase "Publish Job to Queue" as UC34
+    usecase "Consume Job from Queue" as UC35
+    usecase "Ensure Exactly-Once Execution" as UC36
+    usecase "Activate Circuit Breaker" as UC37
+  }
+  
+  ' System Management Use Cases
+  package "System Management" {
+    usecase "Configure System" as UC38
+    usecase "Graceful Shutdown" as UC39
+    usecase "Hot Reload Configuration" as UC40
+    usecase "Run Database Migrations" as UC41
+  }
+}
+
+' Admin relationships
+Admin --> UC1
+Admin --> UC2
+Admin --> UC3
+Admin --> UC4
+Admin --> UC5
+Admin --> UC6
+Admin --> UC7
+Admin --> UC8
+Admin --> UC9
+Admin --> UC10
+Admin --> UC11
+Admin --> UC12
+Admin --> UC21
+Admin --> UC22
+Admin --> UC26
+
+' Engineer relationships
+Engineer --> UC5
+Engineer --> UC21
+Engineer --> UC22
+Engineer --> UC36
+Engineer --> UC38
+
+' DevOps relationships
+DevOps --> UC21
+DevOps --> UC22
+DevOps --> UC23
+DevOps --> UC24
+DevOps --> UC25
+DevOps --> UC26
+DevOps --> UC38
+DevOps --> UC39
+DevOps --> UC40
+DevOps --> UC41
+
+' Security relationships
+Security --> UC27
+Security --> UC28
+Security --> UC29
+Security --> UC30
+Security --> UC31
+Security --> UC32
+
+' Scheduler relationships
+Scheduler --> UC14
+Scheduler --> UC33
+Scheduler --> UC34
+Scheduler --> UC39
+
+' Worker relationships
+Worker --> UC35
+Worker --> UC15
+Worker --> UC16
+Worker --> UC17
+Worker --> UC18
+Worker --> UC19
+Worker --> UC20
+Worker --> UC36
+Worker --> UC37
+Worker --> UC39
+
+' External system relationships
+UC27 ..> Keycloak : <<uses>>
+UC15 ..> ExternalAPI : <<invokes>>
+UC16 ..> TargetDB : <<queries>>
+UC23 ..> Monitoring : <<exports to>>
+UC24 ..> Monitoring : <<sends to>>
+UC25 ..> Monitoring : <<triggers>>
+
+' Include relationships
+UC1 ..> UC7 : <<include>>
+UC1 ..> UC29 : <<include>>
+UC1 ..> UC30 : <<include>>
+UC2 ..> UC29 : <<include>>
+UC2 ..> UC30 : <<include>>
+UC3 ..> UC29 : <<include>>
+UC3 ..> UC30 : <<include>>
+UC6 ..> UC29 : <<include>>
+UC6 ..> UC30 : <<include>>
+UC8 ..> UC13 : <<include>>
+UC9 ..> UC13 : <<include>>
+UC14 ..> UC33 : <<include>>
+UC14 ..> UC34 : <<include>>
+UC15 ..> UC17 : <<include>>
+UC16 ..> UC17 : <<include>>
+UC15 ..> UC18 : <<extend>>
+UC16 ..> UC18 : <<extend>>
+UC18 ..> UC19 : <<extend>>
+UC18 ..> UC20 : <<extend>>
+UC35 ..> UC36 : <<include>>
+
+' Notes
+note right of UC36
+  Uses Redis RedLock and
+  idempotency keys to prevent
+  duplicate executions
+end note
+
+note right of UC14
+  Supports Cron, Fixed Delay,
+  Fixed Rate, and One-Time
+  schedules with timezone support
+end note
+
+note right of UC17
+  Resolves global and job-specific
+  variables with precedence rules
+  and SQL injection prevention
+end note
+
+@enduml

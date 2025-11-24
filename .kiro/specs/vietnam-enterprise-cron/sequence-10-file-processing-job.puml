@@ -1,0 +1,363 @@
+@startuml File Processing Job Execution
+
+title File Processing Job - Excel/CSV Read, Transform, Write
+
+actor "System Administrator" as Admin
+participant "API Server" as API
+participant "MinIO\n(Object Storage)" as MinIO
+participant "Worker Process" as Worker
+participant "File Processor" as FileProc
+participant "Job Context Manager" as ContextMgr
+participant "PostgreSQL\n(System DB)" as DB
+
+== Upload Source File ==
+
+Admin -> MinIO: PUT files/input/users-2025-01.xlsx\nUpload Excel file
+activate Admin
+activate MinIO
+MinIO --> Admin: File stored\nPath: files/input/users-2025-01.xlsx
+deactivate MinIO
+deactivate Admin
+
+== Create File Processing Job ==
+
+Admin -> API: POST /api/jobs\nBody: JSON job definition
+activate Admin
+activate API
+
+note over API
+  **Job Definition:**
+  {
+    "name": "user-data-import",
+    "schedule": {
+      "type": "Cron",
+      "expression": "0 0 3 * * *"
+    },
+    "steps": [
+      {
+        "id": "step1",
+        "name": "read-excel",
+        "type": "FileProcessing",
+        "config": {
+          "operation": "read",
+          "format": "excel",
+          "source_path": "files/input/users-2025-01.xlsx",
+          "sheet": "Users",
+          "transformations": [
+            {
+              "type": "column_mapping",
+              "mapping": {
+                "Full Name": "name",
+                "Email Address": "email",
+                "Phone": "phone"
+              }
+            },
+            {
+              "type": "filter",
+              "condition": "status == 'active'"
+            }
+          ]
+        }
+      },
+      {
+        "id": "step2",
+        "name": "insert-to-database",
+        "type": "DatabaseQuery",
+        "config": {
+          "database_type": "PostgreSQL",
+          "connection_string": "postgresql://{{db_user}}:{{db_pass}}@{{db_host}}/{{db_name}}",
+          "query": "INSERT INTO users (name, email, phone) VALUES {{steps.step1.data}}"
+        }
+      },
+      {
+        "id": "step3",
+        "name": "write-report",
+        "type": "FileProcessing",
+        "config": {
+          "operation": "write",
+          "format": "csv",
+          "data_source": "{{steps.step2.inserted_rows}}",
+          "filename": "import-report-{{execution_id}}.csv"
+        }
+      }
+    ]
+  }
+end note
+
+API -> MinIO: Store job definition
+activate MinIO
+MinIO --> API: Stored
+deactivate MinIO
+
+API -> DB: Insert job metadata
+activate DB
+DB --> API: Job created
+deactivate DB
+
+API --> Admin: 201 Created\n{job_id, webhook_url}
+deactivate API
+deactivate Admin
+
+== Job Execution - Step 1: Read Excel ==
+
+Worker -> MinIO: GET jobs/{job_id}/definition.json
+activate Worker
+activate MinIO
+MinIO --> Worker: Job definition
+deactivate MinIO
+
+Worker -> ContextMgr: Initialize Job Context
+activate ContextMgr
+ContextMgr --> Worker: Context initialized
+deactivate ContextMgr
+
+Worker -> FileProc: Execute step1: read-excel
+activate FileProc
+
+FileProc -> MinIO: GET files/input/users-2025-01.xlsx
+activate MinIO
+MinIO --> FileProc: Excel file (binary stream)
+deactivate MinIO
+
+FileProc -> FileProc: Parse Excel file using calamine crate:\n1. Open workbook\n2. Select sheet "Users"\n3. Read all rows
+
+note over FileProc
+  **Excel Data (Raw):**
+  | Full Name    | Email Address      | Phone        | Status   |
+  |--------------|-------------------|--------------|----------|
+  | John Doe     | john@example.com  | 0901234567   | active   |
+  | Jane Smith   | jane@example.com  | 0907654321   | active   |
+  | Bob Johnson  | bob@example.com   | 0909876543   | inactive |
+end note
+
+FileProc -> FileProc: Apply transformations:\n\n1. Column Mapping:\n   "Full Name" → "name"\n   "Email Address" → "email"\n   "Phone" → "phone"\n\n2. Filter:\n   Keep only rows where status == "active"
+
+note over FileProc
+  **Transformed Data:**
+  [
+    {
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone": "0901234567"
+    },
+    {
+      "name": "Jane Smith",
+      "email": "jane@example.com",
+      "phone": "0907654321"
+    }
+  ]
+  
+  (Bob Johnson filtered out - status: inactive)
+end note
+
+FileProc -> ContextMgr: Store step1 output in Job Context
+activate ContextMgr
+
+ContextMgr -> ContextMgr: Update context:\n{\n  "steps": {\n    "step1": {\n      "status": "Success",\n      "source_file": "files/input/users-2025-01.xlsx",\n      "format": "excel",\n      "sheet": "Users",\n      "rows_read": 3,\n      "rows_after_filter": 2,\n      "data": [\n        {"name": "John Doe", "email": "john@example.com", "phone": "0901234567"},\n        {"name": "Jane Smith", "email": "jane@example.com", "phone": "0907654321"}\n      ]\n    }\n  }\n}
+
+ContextMgr -> MinIO: PUT jobs/{job_id}/executions/{exec_id}/context.json
+activate MinIO
+MinIO --> ContextMgr: Context stored
+deactivate MinIO
+
+ContextMgr --> FileProc: Context updated
+deactivate ContextMgr
+
+FileProc --> Worker: Step1 completed\nRows processed: 2
+deactivate FileProc
+
+== Step 2: Insert to Database ==
+
+Worker -> Worker: Execute step2 (database insert)\nUsing data from {{steps.step1.data}}
+
+note over Worker
+  This step follows the same flow as
+  sequence-03-database-job-execution.puml
+  
+  Data from step1 is used in INSERT query
+end note
+
+Worker -> ContextMgr: Store step2 output
+activate ContextMgr
+
+ContextMgr -> ContextMgr: Update context:\n{\n  "steps": {\n    "step1": {...},\n    "step2": {\n      "status": "Success",\n      "rows_affected": 2,\n      "inserted_rows": [\n        {"id": 101, "name": "John Doe", ...},\n        {"id": 102, "name": "Jane Smith", ...}\n      ]\n    }\n  }\n}
+
+ContextMgr -> MinIO: Update context in MinIO
+activate MinIO
+MinIO --> ContextMgr: Updated
+deactivate MinIO
+
+ContextMgr --> Worker: Context updated
+deactivate ContextMgr
+
+== Step 3: Write CSV Report ==
+
+Worker -> FileProc: Execute step3: write-report
+activate FileProc
+
+FileProc -> MinIO: GET jobs/{job_id}/executions/{exec_id}/context.json
+activate MinIO
+MinIO --> FileProc: Job Context (with step1 and step2 data)
+deactivate MinIO
+
+FileProc -> FileProc: Resolve data source:\n{{steps.step2.inserted_rows}}\n→ [\n  {"id": 101, "name": "John Doe", ...},\n  {"id": 102, "name": "Jane Smith", ...}\n]
+
+FileProc -> FileProc: Generate CSV file:\n1. Create CSV writer\n2. Write header row: id,name,email,phone\n3. Write data rows\n4. Format with proper escaping
+
+note over FileProc
+  **Generated CSV:**
+  id,name,email,phone
+  101,John Doe,john@example.com,0901234567
+  102,Jane Smith,jane@example.com,0907654321
+end note
+
+FileProc -> MinIO: PUT jobs/{job_id}/executions/{exec_id}/output/import-report-{exec_id}.csv\nBody: CSV content
+activate MinIO
+MinIO --> FileProc: File stored\nPath: jobs/{job_id}/executions/{exec_id}/output/import-report-{exec_id}.csv
+deactivate MinIO
+
+FileProc -> ContextMgr: Store step3 output in Job Context
+activate ContextMgr
+
+ContextMgr -> ContextMgr: Update context:\n{\n  "steps": {\n    "step1": {...},\n    "step2": {...},\n    "step3": {\n      "status": "Success",\n      "operation": "write",\n      "format": "csv",\n      "output_path": "jobs/{job_id}/executions/{exec_id}/output/import-report-{exec_id}.csv",\n      "rows_written": 2,\n      "file_size_bytes": 156\n    }\n  },\n  "status": "Success"\n}
+
+ContextMgr -> MinIO: Update final context
+activate MinIO
+MinIO --> ContextMgr: Updated
+deactivate MinIO
+
+ContextMgr --> FileProc: Context finalized
+deactivate ContextMgr
+
+FileProc --> Worker: Step3 completed\nReport generated
+deactivate FileProc
+
+== Finalize Execution ==
+
+Worker -> DB: UPDATE job_executions\nSET status = 'Success',\nminio_context_path = '...',\ncompleted_at = NOW()
+activate DB
+DB --> Worker: Updated
+deactivate DB
+
+Worker -> Worker: Emit metrics:\n- file_processing_rows_read: 3\n- file_processing_rows_written: 2\n- file_processing_duration_seconds: 5.2
+
+deactivate Worker
+
+== Download Report ==
+
+Admin -> API: GET /api/jobs/{job_id}/executions/{exec_id}
+activate Admin
+activate API
+
+API -> DB: SELECT * FROM job_executions WHERE id = exec_id
+activate DB
+DB --> API: Execution record with context path
+deactivate DB
+
+API --> Admin: 200 OK\n{\n  "execution_id": "exec-uuid",\n  "status": "Success",\n  "output_files": [\n    {\n      "path": "jobs/{job_id}/executions/{exec_id}/output/import-report-{exec_id}.csv",\n      "download_url": "https://minio.../import-report-{exec_id}.csv?token=..."\n    }\n  ]\n}
+deactivate API
+
+Admin -> MinIO: GET import-report-{exec_id}.csv\n(via pre-signed URL)
+activate MinIO
+MinIO --> Admin: CSV file download
+deactivate MinIO
+
+deactivate Admin
+
+== Large File Handling ==
+
+note over Worker, FileProc
+  **Streaming Processing for Large Files (>100MB):**
+  
+  1. Read file in chunks (e.g., 1000 rows at a time)
+  2. Process each chunk independently
+  3. Write results incrementally
+  4. Avoid loading entire file into memory
+  
+  **Example with csv crate:**
+  ```rust
+  let mut reader = csv::Reader::from_path(path)?;
+  let mut writer = csv::Writer::from_path(output_path)?;
+  
+  for result in reader.records() {
+      let record = result?;
+      // Process record
+      let transformed = transform(record);
+      writer.write_record(&transformed)?;
+  }
+  ```
+  
+  **Benefits:**
+  - Constant memory usage
+  - Can process files larger than available RAM
+  - Better performance for large datasets
+end note
+
+== Error Handling ==
+
+note over Worker, FileProc
+  **File Processing Errors:**
+  
+  1. **File Not Found:**
+     - Error: "Source file not found in MinIO: {path}"
+     - Status: Failed
+     - No retry (permanent error)
+  
+  2. **Invalid Format:**
+     - Error: "Failed to parse Excel file: Invalid workbook structure"
+     - Status: Failed
+     - No retry (permanent error)
+  
+  3. **Sheet Not Found:**
+     - Error: "Sheet 'Users' not found in workbook"
+     - Status: Failed
+     - No retry (permanent error)
+  
+  4. **Transformation Error:**
+     - Error: "Column mapping failed: Column 'Full Name' not found"
+     - Status: Failed
+     - No retry (permanent error)
+  
+  5. **MinIO Connection Error:**
+     - Error: "Failed to connect to MinIO: Connection timeout"
+     - Status: Failed
+     - Retry with exponential backoff (transient error)
+  
+  6. **Memory Exhaustion:**
+     - Error: "File too large for in-memory processing"
+     - Suggestion: "Use streaming mode for files >100MB"
+     - Status: Failed
+     - No retry (configuration error)
+end note
+
+== Supported File Formats ==
+
+note over FileProc
+  **Excel (XLSX):**
+  - Library: calamine (pure Rust)
+  - Read: All sheets, specific sheet by name/index
+  - Write: rust_xlsxwriter
+  - Features: Cell formatting, formulas (read-only), multiple sheets
+  
+  **CSV:**
+  - Library: csv (Rust standard)
+  - Read: Configurable delimiter (comma, semicolon, tab)
+  - Write: Proper escaping, custom delimiter
+  - Features: Headers, custom quote character, flexible parsing
+  
+  **Transformations:**
+  - Column mapping (rename columns)
+  - Data type conversion (string → number, date parsing)
+  - Filtering (row-level conditions)
+  - Aggregation (sum, count, average)
+  - Sorting
+  - Deduplication
+  
+  **Future Support:**
+  - JSON files
+  - XML files
+  - Parquet files (columnar format)
+  - Fixed-width text files
+end note
+
+@enduml
