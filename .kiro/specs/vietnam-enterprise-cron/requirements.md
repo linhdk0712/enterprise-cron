@@ -354,6 +354,37 @@ The system supports full timezone support for Vietnamese operations (default: As
 
 ### Requirement 19
 
+**User Story:** As a user, I want a web-based login page with a professional interface, so that I can securely authenticate to the system using my browser without requiring API clients or command-line tools.
+
+#### Acceptance Criteria
+
+1. WHEN a user navigates to the root URL (/), THE System SHALL display a modern, responsive login page
+2. WHEN the login page is displayed, THE System SHALL show the Vietnam Enterprise Cron System branding with logo and system name
+3. WHEN the login page is rendered, THE System SHALL provide a login form with username and password input fields
+4. WHEN authentication mode is configured as "database", THE System SHALL display a standard login form with username and password fields
+5. WHEN authentication mode is configured as "keycloak", THE System SHALL provide a button to redirect users to the Keycloak login page
+6. WHEN a user enters invalid credentials and submits the login form, THE System SHALL display an error message without revealing whether the username or password was incorrect (to prevent user enumeration)
+7. WHEN a user enters valid credentials and submits the login form, THE System SHALL authenticate the user and redirect to the dashboard
+8. WHEN authentication is successful, THE System SHALL store the JWT token securely in the browser (using httpOnly cookies or secure localStorage)
+9. WHEN a user is already authenticated and navigates to the login page, THE System SHALL redirect them directly to the dashboard
+10. WHEN the login form is submitted, THE System SHALL display a loading indicator to provide user feedback
+11. WHEN authentication fails due to network error, THE System SHALL display a user-friendly error message and allow retry
+12. WHEN the login page is accessed from a mobile device, THE System SHALL display a mobile-optimized responsive layout
+13. WHEN a user has JavaScript disabled, THE System SHALL still allow form submission and display error/success messages
+14. WHEN authentication mode is "database", THE System SHALL include a "Forgot Password" link that explains password reset must be done by system administrator
+15. WHEN the login page loads, THE System SHALL display the current system version and health status (optional)
+16. WHEN a user clicks "Login" with empty fields, THE System SHALL display field validation errors without making an API call
+17. WHEN a user session expires, THE System SHALL redirect to the login page with a message indicating session expiration
+18. WHEN the login page is displayed, THE System SHALL use consistent styling with the rest of the dashboard (matching colors, fonts, layout patterns)
+19. WHEN a user successfully logs in, THE System SHALL log the login event with timestamp, username, IP address, and user agent for audit purposes
+20. WHEN a user fails to log in, THE System SHALL log the failed attempt with timestamp, attempted username, IP address, and failure reason
+21. WHEN the login page is displayed in database authentication mode, THE System SHALL show the default credentials hint for initial setup: "Default: admin / admin123"
+22. WHEN the login form detects multiple failed login attempts from the same IP (5+ failures in 15 minutes), THE System SHALL implement temporary rate limiting with appropriate user messaging
+23. WHEN the login page loads, THE System SHALL include CSRF protection tokens for form submission security
+24. WHEN the login page is served, THE System SHALL include appropriate security headers (Content-Security-Policy, X-Frame-Options, X-Content-Type-Options)
+
+### Requirement 20
+
 **User Story:** As a system administrator, I want to connect to SFTP servers to download and upload files, so that I can automate secure file transfer operations with external systems.
 
 #### Acceptance Criteria
