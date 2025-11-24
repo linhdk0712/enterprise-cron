@@ -5,8 +5,10 @@ pub mod health;
 pub mod import_export;
 pub mod index;
 pub mod jobs;
+pub mod login;
 pub mod metrics;
 pub mod sse;
+pub mod users;
 pub mod variables;
 pub mod webhooks;
 

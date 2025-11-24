@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::{extract::State, http::HeaderMap, Json};
 use chrono::{Duration, Utc};
 use common::auth::{DatabaseAuthService, JwtService};
 use common::db::repositories::user::UserRepository;
@@ -6,6 +6,7 @@ use common::models::User;
 use serde::{Deserialize, Serialize};
 
 use crate::handlers::{ErrorResponse, SuccessResponse};
+use crate::middleware::rate_limit::RateLimiter;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -54,14 +55,54 @@ impl From<User> for UserResponse {
     }
 }
 
+/// Extract client IP from headers
+/// Requirements: 19.13 - IP-based rate limiting
+fn get_client_ip(headers: &HeaderMap) -> String {
+    // Try X-Forwarded-For header first (for proxy/load balancer)
+    if let Some(forwarded) = headers.get("X-Forwarded-For") {
+        if let Ok(forwarded_str) = forwarded.to_str() {
+            if let Some(first_ip) = forwarded_str.split(',').next() {
+                return first_ip.trim().to_string();
+            }
+        }
+    }
+
+    // Try X-Real-IP header
+    if let Some(real_ip) = headers.get("X-Real-IP") {
+        if let Ok(ip_str) = real_ip.to_str() {
+            return ip_str.to_string();
+        }
+    }
+
+    // Fallback to unknown if we can't determine IP
+    "unknown".to_string()
+}
+
 /// Login endpoint (database mode)
 /// Requirements: 10.2 - Validate credentials against database
 /// Requirements: 10.3 - Generate JWT token on successful login
+/// Requirements: 19.13, 19.14 - Rate limiting for login attempts
 #[tracing::instrument(skip(state, req))]
 pub async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<SuccessResponse<LoginResponse>>, ErrorResponse> {
+    // Get client IP for rate limiting
+    let client_ip = get_client_ip(&headers);
+
+    // Check rate limit
+    let rate_limiter = RateLimiter::new(state.redis_client.clone());
+    if let Err(error_msg) = rate_limiter.check_login_rate_limit(&client_ip).await {
+        tracing::warn!(
+            ip = %client_ip,
+            username = %req.username,
+            error = %error_msg,
+            "Login rate limit exceeded"
+        );
+        return Err(ErrorResponse::new("rate_limit_exceeded", error_msg));
+    }
+
     // Validate input
     if req.username.is_empty() {
         return Err(ErrorResponse::new(
@@ -93,9 +134,20 @@ pub async fn login(
         .map_err(|e| {
             tracing::warn!(
                 username = %req.username,
+                ip = %client_ip,
                 error = %e,
                 "Login failed"
             );
+
+            // Record failed login attempt
+            let rate_limiter = RateLimiter::new(state.redis_client.clone());
+            let client_ip_clone = client_ip.clone();
+            tokio::spawn(async move {
+                if let Err(e) = rate_limiter.record_failed_login(&client_ip_clone).await {
+                    tracing::error!(error = %e, "Failed to record login attempt");
+                }
+            });
+
             match e {
                 common::errors::AuthError::InvalidCredentials => {
                     ErrorResponse::new("unauthorized", "Invalid username or password")
@@ -107,10 +159,23 @@ pub async fn login(
             }
         })?;
 
+    // Reset rate limit on successful login
+    let rate_limiter = RateLimiter::new(state.redis_client.clone());
+    let client_ip_clone = client_ip.clone();
+    tokio::spawn(async move {
+        if let Err(e) = rate_limiter.reset_login_rate_limit(&client_ip_clone).await {
+            tracing::error!(error = %e, "Failed to reset rate limit");
+        }
+    });
+
     // Calculate expiration time
     let expires_at = (Utc::now() + Duration::hours(jwt_expiry_hours as i64)).timestamp();
 
-    tracing::info!(username = %req.username, "User logged in successfully");
+    tracing::info!(
+        username = %req.username,
+        ip = %client_ip,
+        "User logged in successfully"
+    );
 
     Ok(Json(SuccessResponse::new(LoginResponse {
         token,

@@ -49,14 +49,22 @@ pub async fn rbac_middleware(
 }
 
 /// Determine the required permission based on request path and method
+/// Requirements: 19.1.15-43 - Permission-based endpoint access control
 fn determine_required_permission(req: &Request) -> Option<String> {
     let path = req.uri().path();
     let method = req.method().as_str();
 
     // Job management permissions
+    // Requirements: 19.1.15-21 - Jobs API with RBAC
     if path.starts_with("/api/jobs") {
-        if path.contains("/trigger") {
+        if path.contains("/trigger") || path.contains("/enable") || path.contains("/disable") {
             return Some("job:execute".to_string());
+        }
+        if path.contains("/export") {
+            return Some("job:export".to_string());
+        }
+        if path.contains("/import") {
+            return Some("job:import".to_string());
         }
         return match method {
             "GET" => Some("job:read".to_string()),
@@ -68,7 +76,11 @@ fn determine_required_permission(req: &Request) -> Option<String> {
     }
 
     // Execution history permissions
+    // Requirements: 19.1.22-25 - Executions API with RBAC
     if path.starts_with("/api/executions") {
+        if path.contains("/stop") {
+            return Some("execution:stop".to_string());
+        }
         return match method {
             "GET" => Some("execution:read".to_string()),
             _ => None,
@@ -76,22 +88,56 @@ fn determine_required_permission(req: &Request) -> Option<String> {
     }
 
     // Variable management permissions
+    // Requirements: 19.1.26-31 - Variables API with RBAC
     if path.starts_with("/api/variables") {
         return match method {
-            "GET" => Some("job:read".to_string()),
-            "POST" | "PUT" | "DELETE" => Some("job:write".to_string()),
+            "GET" => Some("variable:read".to_string()),
+            "POST" => Some("variable:write".to_string()),
+            "PUT" => Some("variable:write".to_string()),
+            "DELETE" => Some("variable:write".to_string()),
+            _ => None,
+        };
+    }
+
+    // Webhook management permissions
+    // Requirements: 19.1.32-35 - Webhooks API with RBAC
+    if path.starts_with("/api/webhooks") && !path.contains("handle") {
+        return match method {
+            "GET" => Some("webhook:read".to_string()),
+            "POST" | "PUT" | "DELETE" => Some("webhook:write".to_string()),
             _ => None,
         };
     }
 
     // User management permissions (admin only)
+    // Requirements: 19.1.36-43 - User Management API with RBAC
     if path.starts_with("/api/users") {
-        return Some("admin:users".to_string());
+        // Get user ID from path if present (for viewing own profile)
+        let parts: Vec<&str> = path.split('/').collect();
+        if parts.len() >= 4 && method == "GET" {
+            // Allow users to view their own profile
+            // The handler will check if user_id matches claims.sub
+            return Some("job:read".to_string()); // Minimum permission for authenticated users
+        }
+        return Some("user:manage".to_string());
+    }
+
+    // System configuration endpoints (admin only)
+    // Requirements: 19.1.55-58 - System Config API (admin-only)
+    if path.starts_with("/api/system/config") {
+        return Some("system:config".to_string());
+    }
+
+    // Audit log endpoints (admin only)
+    // Requirements: 19.1.59-60 - Audit Logs API (admin-only)
+    if path.starts_with("/api/system/audit-logs") {
+        return Some("system:audit".to_string());
     }
 
     // Dashboard permissions
+    // Requirements: 19.1.61-67 - Dashboard with RBAC
     if path.starts_with("/dashboard") {
-        return Some("job:read".to_string());
+        return Some("dashboard:user".to_string()); // Minimum permission for dashboard access
     }
 
     None

@@ -20,10 +20,14 @@ pub fn create_router(state: AppState) -> Router {
         .allow_headers(Any);
 
     // Public routes (no authentication required)
+    // Requirements: 19.1, 19.2 - Login page at root URL
     let public_routes = Router::new()
-        .route("/", get(handlers::index::index))
+        .route("/", get(handlers::login::login_page))
+        .route("/api/info", get(handlers::index::index))
         .route("/health", get(handlers::health::health_check))
         .route("/api/auth/login", post(handlers::auth::login))
+        .route("/api/auth/login/form", post(handlers::login::login_form_submit))
+        .route("/auth/set-token", get(handlers::login::set_token_page))
         .route("/api/auth/refresh", post(handlers::auth::refresh_token));
 
     // Protected routes (authentication required)
@@ -57,8 +61,16 @@ pub fn create_router(state: AppState) -> Router {
             "/api/variables/:id",
             delete(handlers::variables::delete_variable),
         )
-        // User management endpoints (database mode only)
+        // User management endpoints
+        // Requirements: 19.1.36-43 - User Management API with RBAC
         .route("/api/users", post(handlers::auth::create_user))
+        .route("/api/users", get(handlers::users::list_users))
+        .route("/api/users/:id", get(handlers::users::get_user))
+        .route("/api/users/:id", put(handlers::users::update_user))
+        .route("/api/users/:id", delete(handlers::users::delete_user))
+        .route("/api/users/:id/roles", put(handlers::users::assign_roles))
+        .route("/api/users/:id/password", put(handlers::users::update_password))
+        .route("/api/roles", get(handlers::users::list_roles))
         // Webhook endpoints
         .route(
             "/api/webhooks/:path",
