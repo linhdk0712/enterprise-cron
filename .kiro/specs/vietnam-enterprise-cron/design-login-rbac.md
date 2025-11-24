@@ -479,7 +479,7 @@ pub struct LoginQuery {
 }
 
 /// Login page handler
-/// Requirement: 19.1 - Display login form with authentication mode detection
+/// Requirements: 19.1-19.24 - Display login form with authentication mode detection
 #[tracing::instrument(skip(state))]
 pub async fn login_page(
     State(state): State<AppState>,
@@ -494,10 +494,11 @@ pub async fn login_page(
     // Insert error message if provided
     if let Some(error) = params.error {
         let error_message = match error.as_str() {
-            "session_expired" => "Your session has expired. Please login again.",
-            "invalid_credentials" => "Invalid username or password.",
+            "session_expired" => "Your session has expired. Please login again.",         // Req 19.17
+            "invalid_credentials" => "Invalid username or password.",                     // Req 19.6
             "account_disabled" => "Your account has been disabled.",
-            "too_many_attempts" => "Too many failed login attempts. Please try again in 15 minutes.",
+            "too_many_attempts" => "Too many failed login attempts. Please try again in 15 minutes.", // Req 19.22
+            "network_error" => "Unable to reach authentication service. Please try again.", // Req 19.11
             _ => "An error occurred. Please try again.",
         };
         context.insert("error_message", error_message);
@@ -509,6 +510,12 @@ pub async fn login_page(
     // Insert system information
     context.insert("system_name", "Vietnam Enterprise Cron System");
     context.insert("system_version", env!("CARGO_PKG_VERSION"));
+    context.insert(
+        "health_status",
+        &fetch_health_status()
+            .await
+            .unwrap_or_else(|_| "Unknown".to_string()),
+    ); // Requirement 19.15
 
     // Insert CSRF token
     let csrf_token = generate_csrf_token();
@@ -530,7 +537,128 @@ fn generate_csrf_token() -> String {
     use uuid::Uuid;
     Uuid::new_v4().to_string()
 }
+
+/// Fetch service health for login footer (Requirement 19.15)
+async fn fetch_health_status() -> Result<String, Error> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("http://localhost:8080/health")
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await?;
+
+    if resp.status().is_success() {
+        Ok("Healthy".into())
+    } else {
+        Ok("Degraded".into())
+    }
+}
 ```
+
+#### 4.1.1 Login Template & UX Coverage
+
+```html
+<!-- api/templates/login.html -->
+{% extends "layout.html" %}
+
+{% block content %}
+<main class="login-page">
+  <section class="login-panel">
+    <header class="login-header">
+      <img src="/static/img/logo.svg" alt="Vietnam Enterprise Cron System" />
+      <h1>Vietnam Enterprise Cron System</h1>
+      <p class="version">{{ system_version }} · Health: {{ health_status }}</p> <!-- Req 19.2 & 19.15 -->
+    </header>
+
+    <noscript>
+      <div class="alert alert-warning">
+        JavaScript is disabled. Form submission still works, but live validation is unavailable. <!-- Req 19.13 -->
+      </div>
+    </noscript>
+
+    {% if error_message %}
+    <div class="alert alert-error" role="status">{{ error_message }}</div> <!-- Req 19.6 & 19.11 -->
+    {% endif %}
+
+    <form id="login-form"
+          method="POST"
+          hx-post="/api/auth/login"
+          hx-target="#login-errors"
+          hx-indicator=".loading-indicator"
+          class="login-form"
+          data-mode="{{ auth_mode }}">
+
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" /> <!-- Req 19.23 -->
+
+      <label for="username">Username</label>
+      <input id="username"
+             name="username"
+             required
+             autocomplete="username"
+             oninput="validateLoginField(this)" />
+
+      <label for="password">Password</label>
+      <input id="password"
+             type="password"
+             name="password"
+             required
+             autocomplete="current-password"
+             oninput="validateLoginField(this)" />
+
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">
+          <span class="loading-indicator hidden"></span> <!-- Req 19.10 -->
+          Login
+        </button>
+        <a href="/docs/password-reset" class="link-muted">
+          Forgot Password? Contact your administrator. <!-- Req 19.14 -->
+        </a>
+      </div>
+
+      {% if auth_mode == "database" %}
+      <p class="default-hint">Default: admin / admin123</p> <!-- Req 19.21 -->
+      {% else %}
+      <button type="button"
+              class="btn-secondary"
+              onclick="window.location='{{ keycloak_login_url }}'">
+        Continue with Keycloak <!-- Req 19.5 -->
+      </button>
+      {% endif %}
+    </form>
+
+    <div id="login-errors"></div>
+  </section>
+</main>
+{% endblock %}
+```
+
+- Layout uses CSS grid to center the panel on desktop and stacks vertically below 640px, covering responsive Requirement 19.12 and stylistic Requirement 19.18.
+- Client-side validation (Requirement 19.16) runs via `validateLoginField` to surface empty-field errors before network requests; HTML5 `required` attribute provides no-JS fallback.
+- HTMX indicator satisfies Requirement 19.10; custom error region provides friendly text for network outages (Requirement 19.11).
+- `noscript` warning ensures degraded mode messaging (Requirement 19.13).
+- Database-mode hint and forgot-password copy address Requirements 19.14 and 19.21.
+- Branding, logo, and health line fulfill Requirements 19.2 and 19.15.
+
+#### 4.1.2 Root Route & Authenticated Redirects
+
+- Router now mounts:
+
+```rust
+Router::new()
+    .route("/", get(|| async { Redirect::to("/login") }))                 // Req 19.1
+    .route("/login", get(login_page))
+    .route_layer(middleware::from_fn(redirect_authenticated));
+```
+
+- `redirect_authenticated` inspects `UserClaims` injected by the auth middleware. If a valid session navigates to `/` or `/login`, it returns `Redirect::to("/dashboard")`, satisfying Requirement 19.9 (authenticated users skip login).
+- Middleware also appends `?error=session_expired` when tokens expire so Requirement 19.17 messaging is displayed automatically.
+
+#### 4.1.3 Accessibility & Progressive Enhancement
+
+- All interactive controls include `aria-live` regions for error alerts.
+- The Keycloak button is only rendered when `auth_mode == "keycloak"`, ensuring the correct UX per Requirement 19.5.
+- `login.js` registers a `fetch` fallback to show “Unable to reach authentication service” if the POST fails (Requirement 19.11).
+- The stylesheet reuses dashboard fonts/colors for continuity (Requirement 19.18).
 
 ### 4.2 Authentication Handler (Enhanced)
 
@@ -943,6 +1071,109 @@ pub async fn assign_roles(
 }
 ```
 
+### 4.5 Variables Handler Enhancements (Requirements 19.1.18-23)
+
+```rust
+// api/src/handlers/variables.rs (ENHANCE)
+
+#[tracing::instrument(skip(state))]
+pub async fn list_variables(
+    State(state): State<AppState>,
+) -> Result<Json<SuccessResponse<Vec<VariableResponse>>>, ErrorResponse> {
+    let claims = require_claims(&state.request)?;
+    let repo = VariableRepository::new(state.db_pool.clone());
+    let mut results = repo.list_all().await?;
+
+    if !claims.permissions.iter().any(|p| p == "variable:encrypt") {
+        results.retain(|var| !var.is_sensitive);                            // Req 19.1.19
+    }
+
+    let response = results
+        .into_iter()
+        .map(|var| VariableResponse {
+            value: if var.is_sensitive { "***".into() } else { var.value },  // Req 19.1.18
+            ..var.into()
+        })
+        .collect();
+
+    Ok(Json(SuccessResponse::new(response)))
+}
+
+#[tracing::instrument(skip(state, req))]
+pub async fn create_variable(
+    State(state): State<AppState>,
+    Json(req): Json<CreateVariableRequest>,
+) -> Result<Json<SuccessResponse<VariableResponse>>, ErrorResponse> {
+    require_permission(&state.request, "variable:write")?;
+    if req.is_sensitive {
+        require_permission(&state.request, "variable:encrypt")?;            // Req 19.1.22-23
+    }
+    // existing create flow...
+}
+```
+
+- Regular users only fetch non-sensitive variables; Admins still receive masked values to prevent leakage.
+- Creation/update flows enforce `variable:encrypt` permission before encrypting values.
+- Dashboard template hides Create/Delete buttons if the viewer lacks `variable:write`, aligning UI with backend enforcement (Requirements 19.1.19-21).
+
+### 4.6 Webhook Handler Enhancements (Requirements 19.1.24-27)
+
+```rust
+// api/src/handlers/webhooks.rs (ENHANCE)
+
+#[tracing::instrument(skip(state))]
+pub async fn list_webhooks(
+    State(state): State<AppState>,
+) -> Result<Json<SuccessResponse<Vec<WebhookResponse>>>, ErrorResponse> {
+    require_permission(&state.request, "webhook:read")?;
+    let repo = WebhookRepository::new(state.db_pool.clone());
+    Ok(Json(SuccessResponse::new(repo.find_all().await?)))
+}
+
+#[tracing::instrument(skip(state, req))]
+pub async fn create_webhook(
+    State(state): State<AppState>,
+    Json(req): Json<CreateWebhookRequest>,
+) -> Result<Json<SuccessResponse<WebhookResponse>>, ErrorResponse> {
+    require_permission(&state.request, "webhook:write")?;
+    let secret = generate_signature_secret();
+    let webhook = repo.create(req, secret).await?;
+    log_webhook_event(&state, &webhook, AuditResult::Success).await?;        // Req 19.1.26-27 & 19.1.48
+    Ok(Json(SuccessResponse::new(webhook.into())))
+}
+```
+
+### 4.7 System Config & Audit Handlers (Requirements 19.1.35-38, 48-51)
+
+```rust
+// api/src/handlers/system.rs (NEW)
+
+#[tracing::instrument(skip(state))]
+pub async fn get_system_config(
+    State(state): State<AppState>,
+) -> Result<Json<SuccessResponse<SystemConfigResponse>>, ErrorResponse> {
+    require_permission(&state.request, "system:config")?;
+    Ok(Json(SuccessResponse::new(SystemConfigResponse::from(&state.config))))
+}
+
+#[tracing::instrument(skip(state, query))]
+pub async fn list_audit_logs(
+    State(state): State<AppState>,
+    Query(query): Query<AuditLogFilter>,
+) -> Result<Json<SuccessResponse<Vec<AuditLog>>>, ErrorResponse> {
+    require_permission(&state.request, "system:audit")?;
+    let repo = AuditLogRepository::new(state.db_pool.clone());
+    Ok(Json(SuccessResponse::new(repo.search(query).await?)))
+}
+```
+
+- Audit search supports filters for user, permission, resource, status, and time window. Non-admins never hit this handler because the RBAC middleware returns 404/403 earlier.
+
+### 4.8 Dashboard Navigation Enforcement
+
+- Added `has_permission` helpers inside the Tera context so that navigation links in `dashboard.html` only appear when the viewer has the correct claims (Requirements 19.1.39-43).
+- Admin-only views such as `/dashboard/users`, `/dashboard/system`, and `/dashboard/audit` are additionally hidden behind `should_hide_resource` in the RBAC middleware, ensuring resource discovery is blocked (Requirement 19.1.41 & 19.1.56).
+
 ---
 
 ## 5. API Endpoints
@@ -951,8 +1182,8 @@ pub async fn assign_roles(
 
 | Endpoint | Method | Description | Requirement |
 |----------|--------|-------------|-------------|
-| `/` | GET | Landing page with system info | 19 (existing) |
-| `/login` | GET | Login page | 19.1 |
+| `/` | GET | 302 redirect to `/login` when unauthenticated, else dashboard | 19.1 |
+| `/login` | GET | Responsive login page with branding & health telemetry | 19 |
 | `/api/auth/login` | POST | Authenticate user (database mode) | 19.7, 19.25-28 |
 | `/api/auth/refresh` | POST | Refresh JWT token | Existing |
 | `/health` | GET | Health check | Existing |
