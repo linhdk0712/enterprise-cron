@@ -25,11 +25,12 @@ VALUES (
 -- Create default admin user
 -- Requirements: 19.1.80 - Default admin user with username "admin" and password "admin123"
 -- Password hash for "admin123" using bcrypt (cost 12)
+-- Generated with: bcrypt.hashpw(b"admin123", bcrypt.gensalt())
 INSERT INTO users (id, username, password_hash, email, enabled, created_at, updated_at)
 VALUES (
     '00000000-0000-0000-0000-000000000001'::uuid,
     'admin',
-    '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5NU3pY5pH3eBi', -- admin123
+    '$2b$12$BZFHZuZf2AHVzag.lr00fO7YTtKzDjo9Hd3S8SBVX2rXXCBrV.W9u', -- admin123
     'admin@example.com',
     true,
     NOW(),

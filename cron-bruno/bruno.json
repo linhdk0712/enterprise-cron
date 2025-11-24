@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "cron-bruno",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

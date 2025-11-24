@@ -571,6 +571,7 @@ pub struct User {
 pub struct Role {
     pub id: Uuid,
     pub name: String,
+    #[sqlx(json)]
     pub permissions: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
