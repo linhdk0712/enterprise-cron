@@ -54,3 +54,4 @@ node_modules/
 # MinIO certificates (keep private key secure)
 config/certs/minio/*.key
 config/certs/minio/*.csr
+.claude/settings.local.json
