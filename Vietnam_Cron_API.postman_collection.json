@@ -1,0 +1,542 @@
+{
+  "info": {
+    "name": "Vietnam Enterprise Cron System API",
+    "description": "Complete API collection for Vietnam Enterprise Cron System with authentication and RBAC",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Extract token from response and save to environment",
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('jwt_token', jsonData.data.token);",
+                  "    console.log('JWT Token saved:', jsonData.data.token);",
+                  "    console.log('Token expires at:', new Date(jsonData.data.expires_at * 1000));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login with admin credentials. Returns JWT token with 24h expiration.\n\n**Default Credentials:**\n- Username: `admin`\n- Password: `admin123`\n\n**Response includes:**\n- JWT token (also set as httpOnly cookie)\n- Token expiration timestamp\n- Admin has full permissions (18 total)"
+          },
+          "response": []
+        },
+        {
+          "name": "Login (Regular User - Example)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('jwt_token', jsonData.data.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"user\",\n  \"password\": \"password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Example for regular user login (create user first).\n\n**Regular User Permissions (5 total):**\n- job:read\n- job:execute\n- execution:read\n- variable:read\n- dashboard:user"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('jwt_token', jsonData.data.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{jwt_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Refresh an existing JWT token to get a new one with extended expiration."
+          },
+          "response": []
+        }
+      ],
+      "description": "Authentication endpoints for login and token management"
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Dashboard Home",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard"]
+            },
+            "description": "Main dashboard page (HTML). Requires `dashboard:user` permission.\n\n**Displays:**\n- Total jobs count\n- Active jobs count\n- Running executions\n- Recent executions (24h)\n- Success rate"
+          },
+          "response": []
+        }
+      ],
+      "description": "Dashboard endpoints (HTML/HTMX)"
+    },
+    {
+      "name": "Jobs",
+      "item": [
+        {
+          "name": "List Jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "jobs"]
+            },
+            "description": "Get list of all jobs. Requires `job:read` permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example HTTP Job\",\n  \"description\": \"Fetch data from API\",\n  \"job_type\": \"http\",\n  \"schedule_type\": \"cron\",\n  \"schedule_config\": {\n    \"cron_expression\": \"0 */5 * * * *\"\n  },\n  \"job_config\": {\n    \"url\": \"https://api.example.com/data\",\n    \"method\": \"GET\",\n    \"headers\": {\n      \"Accept\": \"application/json\"\n    }\n  },\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/jobs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "jobs"]
+            },
+            "description": "Create a new job. Requires `job:write` permission.\n\n**Job Types:**\n- `http`: HTTP request\n- `database`: Database query\n- `file`: File processing\n- `sftp`: SFTP operations\n\n**Schedule Types:**\n- `cron`: Cron expression\n- `fixed_delay`: Fixed delay between executions\n- `fixed_rate`: Fixed rate\n- `one_time`: Execute once"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Job",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "jobs", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "00000000-0000-0000-0000-000000000000",
+                  "description": "Job UUID"
+                }
+              ]
+            },
+            "description": "Get job details by ID. Requires `job:read` permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Job",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Job Name\",\n  \"description\": \"Updated description\",\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/jobs/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "jobs", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "00000000-0000-0000-0000-000000000000"
+                }
+              ]
+            },
+            "description": "Update job. Requires `job:write` permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Job",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "jobs", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "00000000-0000-0000-0000-000000000000"
+                }
+              ]
+            },
+            "description": "Delete job. Requires `job:delete` permission (Admin only)."
+          },
+          "response": []
+        },
+        {
+          "name": "Trigger Job",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/:id/trigger",
+              "host": ["{{base_url}}"],
+              "path": ["api", "jobs", ":id", "trigger"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "00000000-0000-0000-0000-000000000000"
+                }
+              ]
+            },
+            "description": "Manually trigger job execution. Requires `job:execute` permission."
+          },
+          "response": []
+        }
+      ],
+      "description": "Job management endpoints with RBAC"
+    },
+    {
+      "name": "Executions",
+      "item": [
+        {
+          "name": "List Executions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/executions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "executions"]
+            },
+            "description": "Get execution history. Requires `execution:read` permission.\n\n**Note:** Regular users see only their own executions, admins see all."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Execution",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/executions/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "executions", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "00000000-0000-0000-0000-000000000000"
+                }
+              ]
+            },
+            "description": "Get execution details. Requires `execution:read` permission."
+          },
+          "response": []
+        }
+      ],
+      "description": "Execution history with role-based filtering"
+    },
+    {
+      "name": "Users (Admin Only)",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users"]
+            },
+            "description": "List all users. Requires `user:manage` permission (Admin only)."
+          },
+          "response": []
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"newuser\",\n  \"password\": \"SecurePassword123!\",\n  \"email\": \"newuser@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users"]
+            },
+            "description": "Create new user. Requires `user:manage` permission (Admin only)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/users/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "00000000-0000-0000-0000-000000000000"
+                }
+              ]
+            },
+            "description": "Get user details. Requires `user:manage` permission (Admin only)."
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Roles",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role_ids\": [\n    \"00000000-0000-0000-0000-000000000002\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/:id/roles",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", ":id", "roles"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "00000000-0000-0000-0000-000000000000"
+                }
+              ]
+            },
+            "description": "Assign roles to user. Requires `role:assign` permission (Admin only).\n\n**Anti-Privilege Escalation:** Cannot modify own roles.\n\n**Default Role IDs:**\n- Admin: `00000000-0000-0000-0000-000000000001`\n- Regular User: `00000000-0000-0000-0000-000000000002`"
+          },
+          "response": []
+        },
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/roles",
+              "host": ["{{base_url}}"],
+              "path": ["api", "roles"]
+            },
+            "description": "List all available roles. Requires `user:manage` permission."
+          },
+          "response": []
+        }
+      ],
+      "description": "User management endpoints (Admin only)"
+    },
+    {
+      "name": "Variables",
+      "item": [
+        {
+          "name": "List Variables",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/variables",
+              "host": ["{{base_url}}"],
+              "path": ["api", "variables"]
+            },
+            "description": "List variables. Requires `variable:read` permission.\n\n**Note:** Regular users see only non-sensitive variables."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Variable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"API_KEY\",\n  \"value\": \"secret-key-value\",\n  \"description\": \"External API key\",\n  \"is_encrypted\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/variables",
+              "host": ["{{base_url}}"],
+              "path": ["api", "variables"]
+            },
+            "description": "Create variable. Requires `variable:write` permission (Admin only)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Variable management with encryption support"
+    },
+    {
+      "name": "System Info",
+      "item": [
+        {
+          "name": "API Info",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "info"]
+            },
+            "description": "Get API version and system information. Public endpoint (no auth required)."
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Health check endpoint. Public (no auth required)."
+          },
+          "response": []
+        }
+      ],
+      "description": "System information endpoints"
+    }
+  ]
+}

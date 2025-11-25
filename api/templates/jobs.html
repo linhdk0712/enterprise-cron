@@ -3,6 +3,12 @@
 {% block title %}Jobs - Vietnam Enterprise Cron{% endblock %}
 
 {% block content %}
+<script>
+    console.log('=== JOBS PAGE DEBUG ===');
+    console.log('Jobs:', {{ jobs | json_encode() | safe }});
+    console.log('Total jobs:', {{ jobs | length }});
+    console.log('======================');
+</script>
 <div class="card" hx-get="/dashboard/jobs" hx-trigger="sse:job_created,sse:job_deleted,sse:job_status_changed"
     hx-select=".card" hx-swap="outerHTML">
     <div class="card-header">
@@ -84,7 +90,7 @@
                 </td>
                 <td>
                     {% if job.total_executions > 0 %}
-                    {% set success_rate = (job.successful_executions / job.total_executions * 100) | round(1) %}
+                    {% set success_rate = (job.successful_executions / job.total_executions * 100) | round %}
                     {% if success_rate >= 90 %}
                     <span class="badge badge-success">{{ success_rate }}%</span>
                     {% elif success_rate >= 70 %}

@@ -1,0 +1,27 @@
+meta {
+  name: List Jobs
+  type: http
+  seq: 2
+}
+
+get {
+  url: http://localhost:8080/api/jobs
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{jwt_token}}
+}
+
+docs {
+  Get list of all jobs. Requires `job:read` permission.
+
+  **Returns:**
+  - Array of job objects
+  - Each job includes: id, name, description, type, schedule, config, enabled status
+
+  **Available to:**
+  - Admin: Full access to all jobs
+  - Regular User: Read-only access
+}

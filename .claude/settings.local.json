@@ -10,7 +10,21 @@
       "Bash(docker-compose exec:*)",
       "Bash(cargo run:*)",
       "Bash(docker-compose start:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(cargo clean:*)",
+      "Bash(RUST_LOG=debug:*)",
+      "Bash(DATABASE_URL=postgresql://cronuser:cronpass@localhost:5432/vietnam_cron:*)",
+      "Bash(REDIS_URL=redis://localhost:6379:*)",
+      "Bash(NATS_URL=nats://localhost:4222:*)",
+      "Bash(MINIO_ENDPOINT=http://localhost:9000:*)",
+      "Bash(MINIO_ACCESS_KEY=minioadmin:*)",
+      "Bash(MINIO_SECRET_KEY=minioadmin :*)",
+      "Bash(MINIO_BUCKET=vietnam-cron-jobs:*)",
+      "Bash(MINIO_REGION=us-east-1:*)",
+      "Bash(JWT_SECRET=your-secret-key-here-change-in-production:*)",
+      "Bash(JWT_EXPIRATION_HOURS=24:*)",
+      "Bash(AUTH_MODE=database:*)",
+      "Bash(TOKEN='eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ1c2VybmFtZSI6ImFkbWluIiwicGVybWlzc2lvbnMiOlsiZGFzaGJvYXJkOmFkbWluIiwiZXhlY3V0aW9uOnJlYWQiLCJleGVjdXRpb246c3RvcCIsImpvYjpkZWxldGUiLCJqb2I6ZXhlY3V0ZSIsImpvYjpleHBvcnQiLCJqb2I6aW1wb3J0Iiwiam9iOnJlYWQiLCJqb2I6d3JpdGUiLCJyb2xlOmFzc2lnbiIsInN5c3RlbTphdWRpdCIsInN5c3RlbTpjb25maWciLCJ1c2VyOm1hbmFnZSIsInZhcmlhYmxlOmVuY3J5cHQiLCJ2YXJpYWJsZTpyZWFkIiwidmFyaWFibGU6d3JpdGUiLCJ3ZWJob29rOnJlYWQiLCJ3ZWJob29rOndyaXRlIl0sImV4cCI6MTc2NDExOTk2OCwiaWF0IjoxNzY0MDMzNTY4fQ.Rb8yefdW0HEWuZSYR5XHrnCJS_67hzd2-YEHkfUAY3c')"
     ],
     "deny": [],
     "ask": []

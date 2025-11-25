@@ -1,0 +1,48 @@
+meta {
+  name: Login (Admin)
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:8080/api/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "username": "admin",
+    "password": "admin123"
+  }
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("jwt_token", res.body.data.token);
+    console.log("JWT Token saved:", res.body.data.token);
+    console.log("Expires at:", new Date(res.body.data.expires_at * 1000));
+  }
+}
+
+docs {
+  Login with admin credentials. Returns JWT token with 24h expiration.
+
+  **Default Credentials:**
+  - Username: `admin`
+  - Password: `admin123`
+
+  **Response includes:**
+  - JWT token (also set as httpOnly cookie)
+  - Token expiration timestamp
+  - Admin has full permissions (18 total)
+
+  **Admin Permissions:**
+  - job:read, job:write, job:execute, job:delete, job:import, job:export
+  - execution:read, execution:stop
+  - variable:read, variable:write, variable:encrypt
+  - webhook:read, webhook:write
+  - user:manage, role:assign
+  - system:config, system:audit
+  - dashboard:admin
+}

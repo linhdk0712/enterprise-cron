@@ -3,6 +3,9 @@
 {% block title %}Executions - Vietnam Enterprise Cron{% endblock %}
 
 {% block content %}
+<script>
+    console.log('=== EXECUTIONS PAGE DEBUG ===');
+</script>
 <div class="card" hx-get="/dashboard/executions" hx-trigger="sse:execution_status_changed" hx-select=".card"
     hx-swap="outerHTML">
     <div class="card-header">
@@ -83,9 +86,9 @@
                     {% if execution.completed_at and execution.started_at %}
                     {% set duration_seconds = (execution.completed_at - execution.started_at) | int %}
                     {% if duration_seconds < 60 %} <small>{{ duration_seconds }}s</small>
-                        {% elif duration_seconds < 3600 %} <small>{{ (duration_seconds / 60) | round(1) }}m</small>
+                        {% elif duration_seconds < 3600 %} <small>{{ (duration_seconds / 60) | round }}m</small>
                             {% else %}
-                            <small>{{ (duration_seconds / 3600) | round(1) }}h</small>
+                            <small>{{ (duration_seconds / 3600) | round }}h</small>
                             {% endif %}
                             {% elif execution.status == "Running" %}
                             <small class="badge badge-info">Running...</small>

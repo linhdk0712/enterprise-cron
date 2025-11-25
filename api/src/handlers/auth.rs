@@ -1,4 +1,10 @@
-use axum::{extract::State, http::HeaderMap, Json};
+use axum::{
+    extract::State,
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    Json,
+};
+use axum_extra::extract::cookie::{Cookie, SameSite};
 use chrono::{Duration, Utc};
 use common::auth::{DatabaseAuthService, JwtService};
 use common::db::repositories::user::UserRepository;
@@ -82,12 +88,13 @@ fn get_client_ip(headers: &HeaderMap) -> String {
 /// Requirements: 10.2 - Validate credentials against database
 /// Requirements: 10.3 - Generate JWT token on successful login
 /// Requirements: 19.13, 19.14 - Rate limiting for login attempts
+/// Requirements: 19.4 - Secure token storage with httpOnly cookies
 #[tracing::instrument(skip(state, req))]
 pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<SuccessResponse<LoginResponse>>, ErrorResponse> {
+) -> Result<Response, ErrorResponse> {
     // Get client IP for rate limiting
     let client_ip = get_client_ip(&headers);
 
@@ -177,10 +184,29 @@ pub async fn login(
         "User logged in successfully"
     );
 
-    Ok(Json(SuccessResponse::new(LoginResponse {
+    // Create httpOnly cookie for secure token storage
+    // Requirements: 19.4 - Secure token storage with httpOnly cookies
+    let cookie = Cookie::build(("auth_token", token.clone()))
+        .path("/")
+        .max_age(time::Duration::hours(jwt_expiry_hours as i64))
+        .same_site(SameSite::Lax)
+        .http_only(true)
+        .secure(false) // Set to true in production with HTTPS
+        .build();
+
+    // Build response with cookie and JSON body
+    let mut response = Json(SuccessResponse::new(LoginResponse {
         token,
         expires_at,
-    })))
+    }))
+    .into_response();
+
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        cookie.to_string().parse().unwrap(),
+    );
+
+    Ok(response)
 }
 
 /// Refresh token endpoint

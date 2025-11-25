@@ -9,31 +9,52 @@ use common::models::UserClaims;
 use crate::state::AppState;
 
 /// Authentication middleware that validates JWT tokens
+/// Requirements: 19.4 - Support both Bearer token and httpOnly cookie authentication
 #[tracing::instrument(skip(state, req, next))]
 pub async fn auth_middleware(
     State(state): State<AppState>,
     mut req: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Extract Authorization header
-    let auth_header = req
+    // Try to extract token from Authorization header first
+    let token = if let Some(auth_header) = req
         .headers()
         .get("Authorization")
         .and_then(|h| h.to_str().ok())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    // Check if it's a Bearer token
-    if !auth_header.starts_with("Bearer ") {
-        tracing::warn!("Invalid authorization header format");
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    let token = &auth_header[7..]; // Skip "Bearer "
+    {
+        // Check if it's a Bearer token
+        if !auth_header.starts_with("Bearer ") {
+            tracing::warn!("Invalid authorization header format");
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        auth_header[7..].to_string() // Skip "Bearer "
+    } else {
+        // Fallback: Extract token from cookie
+        req.headers()
+            .get("Cookie")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|cookies| {
+                cookies
+                    .split(';')
+                    .find_map(|cookie| {
+                        let parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
+                        if parts.len() == 2 && parts[0] == "auth_token" {
+                            Some(parts[1].to_string())
+                        } else {
+                            None
+                        }
+                    })
+            })
+            .ok_or_else(|| {
+                tracing::warn!("No authorization token found in header or cookie");
+                StatusCode::UNAUTHORIZED
+            })?
+    };
 
     // Validate token based on authentication mode
     let claims = match &state.config.auth.mode {
-        common::config::AuthMode::Keycloak => validate_keycloak_token(token, &state).await?,
-        common::config::AuthMode::Database => validate_database_token(token, &state).await?,
+        common::config::AuthMode::Keycloak => validate_keycloak_token(&token, &state).await?,
+        common::config::AuthMode::Database => validate_database_token(&token, &state).await?,
     };
 
     // Insert claims into request extensions for use by handlers

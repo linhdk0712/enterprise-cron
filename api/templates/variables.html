@@ -3,6 +3,12 @@
 {% block title %}Variables - Vietnam Enterprise Cron{% endblock %}
 
 {% block content %}
+<script>
+    console.log('=== VARIABLES PAGE DEBUG ===');
+    console.log('Variables:', {{ variables | json_encode() | safe }});
+    console.log('Total variables:', {{ variables | length }});
+    console.log('===========================');
+</script>
 <div class="card">
     <div class="card-header">
         <h2>Variables</h2>

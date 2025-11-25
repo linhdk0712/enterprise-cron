@@ -89,6 +89,9 @@ COPY --from=builder --chown=cronuser:cronuser /app/target/release/worker /usr/lo
 COPY --chown=cronuser:cronuser config/default.toml /app/config/
 COPY --chown=cronuser:cronuser migrations /app/migrations/
 
+# Copy templates for dashboard
+COPY --chown=cronuser:cronuser api/templates /app/api/templates/
+
 # Set working directory
 WORKDIR /app
 

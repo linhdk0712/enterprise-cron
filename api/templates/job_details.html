@@ -3,6 +3,14 @@
 {% block title %}{{ job.name }} - Vietnam Enterprise Cron{% endblock %}
 
 {% block content %}
+<script>
+    console.log('=== JOB DETAILS DEBUG ===');
+    console.log('Job:', {{ job | json_encode() | safe }});
+    console.log('Job ID:', '{{ job.id }}');
+    console.log('Job Name:', '{{ job.name }}');
+    console.log('Enabled:', {{ job.enabled | lower }});
+    console.log('========================');
+</script>
 <div class="card" sse-swap="job_status_changed" hx-get="/dashboard/jobs/{{ job.id }}"
     hx-trigger="sse:job_status_changed[detail.job_id=='{{ job.id }}']">
     <div class="card-header">
@@ -59,7 +67,7 @@
             <div style="color: #7f8c8d; font-size: 0.85rem; margin-bottom: 0.25rem;">Success Rate</div>
             <div style="font-size: 1.25rem; font-weight: 600;">
                 {% if job.total_executions > 0 %}
-                {% set success_rate = (job.successful_executions / job.total_executions * 100) | round(1) %}
+                {% set success_rate = (job.successful_executions / job.total_executions * 100) | round %}
                 {{ success_rate }}%
                 {% else %}
                 N/A

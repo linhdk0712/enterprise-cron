@@ -21,18 +21,32 @@ pub async fn rbac_middleware(
         .get::<UserClaims>()
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Determine required permission based on request path and method
-    let required_permission = determine_required_permission(&req);
+    // Special handling for dashboard routes - allow both dashboard:user and dashboard:admin
+    if req.uri().path().starts_with("/dashboard") {
+        let has_dashboard_access = claims.permissions.contains(&"dashboard:user".to_string())
+            || claims.permissions.contains(&"dashboard:admin".to_string());
 
-    // Check if user has the required permission
-    if let Some(permission) = required_permission {
-        if !claims.permissions.contains(&permission) {
+        if !has_dashboard_access {
             tracing::warn!(
                 user = %claims.username,
-                required_permission = %permission,
-                "User lacks required permission"
+                "User lacks dashboard access permission"
             );
             return Err(StatusCode::FORBIDDEN);
+        }
+    } else {
+        // Determine required permission based on request path and method
+        let required_permission = determine_required_permission(&req);
+
+        // Check if user has the required permission
+        if let Some(permission) = required_permission {
+            if !claims.permissions.contains(&permission) {
+                tracing::warn!(
+                    user = %claims.username,
+                    required_permission = %permission,
+                    "User lacks required permission"
+                );
+                return Err(StatusCode::FORBIDDEN);
+            }
         }
     }
 
@@ -137,7 +151,9 @@ fn determine_required_permission(req: &Request) -> Option<String> {
     // Dashboard permissions
     // Requirements: 19.1.61-67 - Dashboard with RBAC
     if path.starts_with("/dashboard") {
-        return Some("dashboard:user".to_string()); // Minimum permission for dashboard access
+        // Allow users with either dashboard:user or dashboard:admin permission
+        // Admin users have dashboard:admin, regular users have dashboard:user
+        return None; // Check will be done inline below
     }
 
     None
