@@ -108,7 +108,7 @@ mod property_74_worker_component_isolation {
 
 #[cfg(test)]
 mod integration_tests {
-    use super::*;
+    
 
     #[test]
     fn test_worker_property_tests_compile() {

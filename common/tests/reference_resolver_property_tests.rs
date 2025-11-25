@@ -2,6 +2,7 @@
 // Feature: vietnam-enterprise-cron
 // Requirements: 14.1, 14.2, 14.3, 14.4, 14.6, 14.7 - Reference resolution for variables and step outputs
 
+#![allow(dead_code)]
 use chrono::Utc;
 use common::models::{JobContext, StepOutput, WebhookData};
 use common::worker::ReferenceResolver;

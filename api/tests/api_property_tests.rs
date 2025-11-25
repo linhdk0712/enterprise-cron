@@ -2,6 +2,10 @@
 // Feature: vietnam-enterprise-cron
 // Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 2.8
 
+#![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_imports)]
+
 use chrono::{Duration, Utc};
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -9,7 +13,7 @@ use uuid::Uuid;
 // Import types from common crate
 // Note: These tests will compile once the common crate compilation issues are resolved
 use common::models::{
-    ExecutionStatus, Job, JobExecution, JobStep, Schedule, TriggerConfig, TriggerSource, Variable,
+    ExecutionStatus, Job, JobExecution, Schedule, TriggerConfig, TriggerSource, Variable,
     VariableScope,
 };
 
@@ -236,7 +240,8 @@ fn property_51_manual_trigger_queueing() {
         // Verify execution properties
         prop_assert_eq!(execution.job_id, job_id);
         prop_assert_eq!(execution.status, ExecutionStatus::Pending);
-        prop_assert!(matches!(execution.trigger_source, TriggerSource::Manual { user_id: _ }));
+        let is_manual = matches!(execution.trigger_source, TriggerSource::Manual { .. });
+        prop_assert!(is_manual, "Trigger source should be Manual");
         prop_assert!(execution.idempotency_key.starts_with("manual-"));
         prop_assert!(execution.started_at.is_none(), "Execution should not be started yet");
     });

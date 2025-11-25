@@ -244,12 +244,10 @@ mod audit_logging_tests {
     use super::*;
     use axum::{
         body::Body,
-        http::{Request, StatusCode},
-        middleware::Next,
-        response::{IntoResponse, Response},
+        http::Request,
     };
-    use common::middleware::audit_logging_middleware;
-    use tower::ServiceExt;
+    
+    
 
     // Helper function to create a test request with authenticated user
     fn create_authenticated_request(user_id: &str, username: &str) -> Request<Body> {

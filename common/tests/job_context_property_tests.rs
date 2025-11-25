@@ -3,7 +3,7 @@
 // Requirements: 13.5, 13.6, 13.8, 13.9, 13.10, 14.5 - Job Context management and step output storage
 
 use chrono::Utc;
-use common::models::{FileMetadata, JobContext, StepOutput, WebhookData};
+use common::models::{JobContext, StepOutput};
 use proptest::prelude::*;
 use serde_json::json;
 use std::collections::HashMap;

@@ -646,6 +646,7 @@ mod tests {
     use super::*;
 
     // Helper to create a mock executor for testing
+    #[allow(dead_code)]
     fn create_test_executor() -> FileProcessingExecutor {
         // We can't easily create a real MinIO client in tests without async,
         // so we'll just test the pure functions that don't need storage

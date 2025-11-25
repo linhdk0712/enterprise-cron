@@ -2,6 +2,10 @@
 // Task 39: Final integration testing
 // These tests verify end-to-end workflows across all components
 
+#![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_imports)]
+
 use common::{
     config::MinioConfig,
     models::{ExecutionStatus, Job, JobExecution, TriggerConfig},

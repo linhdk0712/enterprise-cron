@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn test_resolve_webhook_payload() {
         let resolver = ReferenceResolver::new();
-        let mut context = JobContext {
+        let context = JobContext {
             execution_id: Uuid::new_v4(),
             job_id: Uuid::new_v4(),
             variables: HashMap::new(),

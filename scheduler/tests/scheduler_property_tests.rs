@@ -1,6 +1,8 @@
 // Property-based tests for scheduler component
 // Feature: vietnam-enterprise-cron
 
+#![allow(dead_code)]
+
 use common::models::JobExecution;
 use common::queue::JobPublisher;
 use common::scheduler::SchedulerConfig;

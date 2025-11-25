@@ -2,6 +2,8 @@
 // Feature: vietnam-enterprise-cron
 // Requirements: 19.1-19.16 - SFTP download/upload operations with authentication
 
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use chrono::Utc;
 use common::executor::sftp::SftpExecutor;

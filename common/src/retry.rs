@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_exponential_backoff_sequence() {
-        let strategy = ExponentialBackoff::new();
+        let _strategy = ExponentialBackoff::new();
 
         // Test the exponential sequence (without jitter for predictability)
         let strategy_no_jitter = ExponentialBackoff::with_config(5, 1800, 0.0);

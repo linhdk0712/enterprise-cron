@@ -23,7 +23,18 @@
       "Bash(AUTH_MODE=database:*)",
       "Bash(TOKEN='eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ1c2VybmFtZSI6ImFkbWluIiwicGVybWlzc2lvbnMiOlsiZGFzaGJvYXJkOmFkbWluIiwiZXhlY3V0aW9uOnJlYWQiLCJleGVjdXRpb246c3RvcCIsImpvYjpkZWxldGUiLCJqb2I6ZXhlY3V0ZSIsImpvYjpleHBvcnQiLCJqb2I6aW1wb3J0Iiwiam9iOnJlYWQiLCJqb2I6d3JpdGUiLCJyb2xlOmFzc2lnbiIsInN5c3RlbTphdWRpdCIsInN5c3RlbTpjb25maWciLCJ1c2VyOm1hbmFnZSIsInZhcmlhYmxlOmVuY3J5cHQiLCJ2YXJpYWJsZTpyZWFkIiwidmFyaWFibGU6d3JpdGUiLCJ3ZWJob29rOnJlYWQiLCJ3ZWJob29rOndyaXRlIl0sImV4cCI6MTc2NDExOTk2OCwiaWF0IjoxNzY0MDMzNTY4fQ.Rb8yefdW0HEWuZSYR5XHrnCJS_67hzd2-YEHkfUAY3c')",
       "Bash(git push:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo fix:*)",
+      "Bash(find:*)",
+      "Bash(for file in integration-tests/tests/integration_tests.rs worker/tests/worker_property_tests.rs common/tests/property_tests.rs api/tests/api_property_tests.rs)",
+      "Bash(do)",
+      "Bash(if [ -f \"$file\" ])",
+      "Bash(! grep -q \"#!\\[allow(dead_code)\\]\" \"$file\")",
+      "Bash(then)",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": [

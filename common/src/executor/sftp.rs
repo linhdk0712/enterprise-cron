@@ -785,6 +785,7 @@ mod tests {
     use crate::config::MinioConfig;
     use crate::storage::MinIOServiceImpl;
 
+    #[allow(dead_code)]
     fn create_test_minio_service() -> Arc<dyn MinIOService> {
         // Create a mock MinIO service for testing
         // In real tests, you would use testcontainers or a mock

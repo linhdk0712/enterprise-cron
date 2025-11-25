@@ -3,10 +3,8 @@
 // Requirements: 10.1, 10.2, 10.3, 10.4, 10.11, 10.12, 10.13
 
 use chrono::Utc;
-use common::auth::{DatabaseAuthService, JwtService};
-use common::db::repositories::user::UserRepository;
-use common::db::DbPool;
-use common::models::{Role, User};
+use common::auth::JwtService;
+use common::models::User;
 use proptest::prelude::*;
 use uuid::Uuid;
 
@@ -114,7 +112,7 @@ fn property_72_keycloak_configuration() {
 
         use common::auth::KeycloakJwtService;
 
-        let keycloak_service = KeycloakJwtService::new(&server_url, &realm, &client_id);
+        let _keycloak_service = KeycloakJwtService::new(&server_url, &realm, &client_id);
 
         // The service should be created successfully
         // We can't test actual token validation without a running Keycloak instance,
@@ -212,7 +210,7 @@ fn property_71_keycloak_resilience_structure() {
 
     use common::auth::KeycloakJwtService;
 
-    let keycloak_service =
+    let _keycloak_service =
         KeycloakJwtService::new("https://keycloak.example.com", "test-realm", "test-client");
 
     // The service should be created with caching capability

@@ -3,7 +3,6 @@
 // Property 74: Worker component isolation
 
 use anyhow::Result;
-use common::circuit_breaker::CircuitBreaker;
 use common::config::Settings;
 use common::db::pool::DbPool;
 use common::db::repositories::execution::ExecutionRepository;
@@ -13,7 +12,7 @@ use common::executor::file::FileProcessingExecutor;
 use common::executor::http::HttpExecutor;
 use common::executor::JobExecutor;
 use common::queue::nats::{NatsClient, NatsConfig};
-use common::queue::{JobConsumer, NatsJobConsumer};
+use common::queue::NatsJobConsumer;
 use common::storage::{MinIOService, MinIOServiceImpl, MinioClient};
 use common::worker::context::JobContextManager;
 use common::worker::WorkerJobConsumer;
@@ -114,11 +113,11 @@ async fn main() -> Result<()> {
         let database_executor = Arc::clone(&database_executor);
 
         Arc::new(move |job_message: common::queue::JobMessage| {
-            let job_repo = Arc::clone(&job_repo);
-            let execution_repo = Arc::clone(&execution_repo);
-            let context_manager = Arc::clone(&context_manager);
-            let http_executor = Arc::clone(&http_executor);
-            let database_executor = Arc::clone(&database_executor);
+            let _job_repo = Arc::clone(&job_repo);
+            let _execution_repo = Arc::clone(&execution_repo);
+            let _context_manager = Arc::clone(&context_manager);
+            let _http_executor = Arc::clone(&http_executor);
+            let _database_executor = Arc::clone(&database_executor);
 
             Box::pin(async move {
                 // Process the job
