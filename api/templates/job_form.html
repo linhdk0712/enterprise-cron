@@ -146,6 +146,16 @@
         display: none !important;
     }
 
+    input[type="checkbox"]:disabled+strong {
+        color: #95a5a6;
+        text-decoration: line-through;
+    }
+
+    input[type="checkbox"]:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
     @media (max-width: 768px) {
         .wizard-steps {
             flex-direction: column;
@@ -236,7 +246,7 @@
                 <div class="radio-group">
                     <div class="radio-option">
                         <input type="radio" id="schedule-none" name="schedule_type" value="none" checked>
-                        <label for="schedule-none">Manual Only</label>
+                        <label for="schedule-none">Manual Only (trigger via dashboard or API)</label>
                     </div>
                     <div class="radio-option">
                         <input type="radio" id="schedule-cron" name="schedule_type" value="cron">
@@ -255,6 +265,9 @@
                         <label for="schedule-one-time">One Time</label>
                     </div>
                 </div>
+                <small style="color: #7f8c8d; display: block; margin-top: 0.5rem;">
+                    💡 Tip: Choose "Manual Only" if you want to trigger the job on-demand without automatic scheduling.
+                </small>
             </div>
 
             <!-- Cron Schedule -->
@@ -311,30 +324,43 @@
             </p>
             <div id="steps-container"></div>
             <button type="button" class="btn btn-primary" onclick="addStep()">
-                + Add Step
+                + Add Another Step
             </button>
+            <div id="steps-validation-error" class="error-message" style="margin-top: 1rem;"></div>
         </div>
 
         <!-- Step 4: Triggers -->
         <div class="wizard-content" data-step="4">
             <h3>Trigger Configuration</h3>
+            <p style="color: #7f8c8d; margin-bottom: 1rem;">
+                Configure how this job can be triggered. You can enable multiple trigger types.
+            </p>
             <div class="form-group">
                 <label>
                     <input type="checkbox" id="trigger-scheduled" name="trigger_scheduled" checked>
-                    Scheduled Trigger (based on schedule configuration)
+                    <strong>Scheduled Trigger</strong> - Automatically run based on schedule configuration
                 </label>
+                <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
+                    Only works if you configured a schedule (Cron, Fixed Delay, Fixed Rate, or One Time)
+                </small>
             </div>
             <div class="form-group">
                 <label>
                     <input type="checkbox" id="trigger-manual" name="trigger_manual" checked>
-                    Manual Trigger (via dashboard or API)
+                    <strong>Manual Trigger</strong> - Trigger on-demand via dashboard or API
                 </label>
+                <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
+                    ✅ Recommended for manual jobs - allows you to click "Trigger" button in the dashboard
+                </small>
             </div>
             <div class="form-group">
                 <label>
                     <input type="checkbox" id="trigger-webhook" name="trigger_webhook">
-                    Webhook Trigger
+                    <strong>Webhook Trigger</strong> - Trigger via HTTP webhook endpoint
                 </label>
+                <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
+                    Allows external systems to trigger this job via authenticated webhook
+                </small>
             </div>
             <div id="webhook-config" class="hidden">
                 <div class="form-group">
@@ -359,6 +385,9 @@
         <!-- Step 5: Review -->
         <div class="wizard-content" data-step="5">
             <h3>Review & Submit</h3>
+            <div id="job-summary" style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                <!-- Will be populated by JavaScript -->
+            </div>
             <p style="color: #7f8c8d; margin-bottom: 1rem;">
                 Review the generated JSON job definition before submitting.
             </p>
@@ -402,6 +431,9 @@
 
         // Form submission
         document.getElementById('job-form').addEventListener('submit', handleSubmit);
+
+        // Auto-add first step for better UX
+        addStep();
     });
 
     function handleScheduleTypeChange(e) {
@@ -421,6 +453,21 @@
             document.getElementById('fixed-rate-config').classList.remove('hidden');
         } else if (value === 'one_time') {
             document.getElementById('one-time-config').classList.remove('hidden');
+        }
+
+        // Auto-adjust trigger checkboxes based on schedule type
+        const scheduledTrigger = document.getElementById('trigger-scheduled');
+        const manualTrigger = document.getElementById('trigger-manual');
+
+        if (value === 'none') {
+            // Manual only - disable scheduled trigger, ensure manual is enabled
+            scheduledTrigger.checked = false;
+            scheduledTrigger.disabled = true;
+            manualTrigger.checked = true;
+        } else {
+            // Has schedule - enable scheduled trigger
+            scheduledTrigger.disabled = false;
+            scheduledTrigger.checked = true;
         }
     }
 
@@ -508,10 +555,28 @@
                 }
             }
         } else if (currentStep === 3) {
+            const stepsError = document.getElementById('steps-validation-error');
             if (steps.length === 0) {
-                alert('At least one job step is required');
+                stepsError.textContent = '⚠️ At least one job step is required. Click "+ Add Another Step" to add a step.';
                 return false;
             }
+
+            // Validate each step has required fields
+            for (let i = 0; i < steps.length; i++) {
+                const stepEl = document.getElementById(steps[i].id);
+                const stepName = stepEl.querySelector('.step-name').value.trim();
+                const stepType = stepEl.querySelector('.step-type').value;
+
+                if (!stepName) {
+                    stepsError.textContent = `⚠️ Step ${i + 1}: Step name is required`;
+                    return false;
+                }
+                if (!stepType) {
+                    stepsError.textContent = `⚠️ Step ${i + 1}: Step type is required`;
+                    return false;
+                }
+            }
+            stepsError.textContent = '';
         }
 
         return true;
@@ -883,10 +948,10 @@
 
             if (!stepName || !stepType) return;
 
+            // Build step with flat type structure (serde tagged enum)
             const stepDef = {
                 id: `step${index + 1}`,
                 name: stepName,
-                type: null,
                 condition: null
             };
 
@@ -927,6 +992,7 @@
                     };
                 }
 
+                // Flat structure for serde tagged enum
                 stepDef.type = {
                     type: 'http_request',
                     method: method,
@@ -954,7 +1020,7 @@
 
                 stepDef.type = {
                     type: 'database_query',
-                    database_type: dbType,
+                    database_type: dbType,  // postgresql, mysql, oracle (lowercase)
                     connection_string: connection,
                     query: query,
                     query_type: queryTypeObj
@@ -1061,12 +1127,56 @@
         const jobDef = buildJobDefinition();
         const jsonStr = JSON.stringify(jobDef, null, 2);
         document.getElementById('json-preview').textContent = jsonStr;
+
+        // Update summary
+        const scheduleType = document.querySelector('input[name="schedule_type"]:checked').value;
+        let scheduleText = '';
+        if (scheduleType === 'none') {
+            scheduleText = '<span class="badge badge-secondary">Manual Only</span> - This job will only run when manually triggered';
+        } else if (scheduleType === 'cron') {
+            scheduleText = `<span class="badge badge-primary">Cron</span> - ${document.getElementById('cron-expression').value}`;
+        } else if (scheduleType === 'fixed_delay') {
+            scheduleText = `<span class="badge badge-primary">Fixed Delay</span> - ${document.getElementById('delay-seconds').value} seconds`;
+        } else if (scheduleType === 'fixed_rate') {
+            scheduleText = `<span class="badge badge-primary">Fixed Rate</span> - ${document.getElementById('interval-seconds').value} seconds`;
+        } else if (scheduleType === 'one_time') {
+            scheduleText = `<span class="badge badge-primary">One Time</span> - ${document.getElementById('execute-at').value}`;
+        }
+
+        const triggers = [];
+        if (document.getElementById('trigger-scheduled').checked && scheduleType !== 'none') {
+            triggers.push('Scheduled');
+        }
+        if (document.getElementById('trigger-manual').checked) {
+            triggers.push('Manual');
+        }
+        if (document.getElementById('trigger-webhook').checked) {
+            triggers.push('Webhook');
+        }
+
+        document.getElementById('job-summary').innerHTML = `
+            <h4 style="margin-top: 0;">📋 Job Summary</h4>
+            <div style="display: grid; gap: 0.5rem;">
+                <div><strong>Name:</strong> ${jobDef.name}</div>
+                <div><strong>Schedule:</strong> ${scheduleText}</div>
+                <div><strong>Steps:</strong> ${jobDef.steps.length} step(s)</div>
+                <div><strong>Triggers:</strong> ${triggers.join(', ')}</div>
+                <div><strong>Timeout:</strong> ${jobDef.timeout_seconds} seconds</div>
+                <div><strong>Max Retries:</strong> ${jobDef.max_retries}</div>
+            </div>
+        `;
     }
 
     async function handleSubmit(e) {
         e.preventDefault();
 
         const jobDef = buildJobDefinition();
+
+        // Debug logging
+        console.log('=== JOB CREATION DEBUG ===');
+        console.log('Job Definition:', jobDef);
+        console.log('JSON Payload:', JSON.stringify(jobDef, null, 2));
+        console.log('========================');
 
         // Client-side validation
         const errors = [];
@@ -1085,6 +1195,7 @@
         }
 
         try {
+            console.log('Sending POST request to /api/jobs...');
             const response = await fetch('/api/jobs', {
                 method: 'POST',
                 headers: {
@@ -1093,20 +1204,28 @@
                 body: JSON.stringify(jobDef)
             });
 
+            console.log('Response status:', response.status);
             const result = await response.json();
+            console.log('Response body:', result);
 
             if (response.ok) {
                 alert('Job created successfully!');
                 window.location.href = `/dashboard/jobs/${result.data}`;
             } else {
                 const errorDiv = document.getElementById('validation-errors');
-                errorDiv.innerHTML = `<div>Error: ${result.error || 'Failed to create job'}</div>`;
+                const errorMsg = result.error || result.message || 'Failed to create job';
+                errorDiv.innerHTML = `<div><strong>Error:</strong> ${errorMsg}</div>`;
+                if (result.details) {
+                    errorDiv.innerHTML += `<div style="margin-top: 0.5rem;"><small>${result.details}</small></div>`;
+                }
                 errorDiv.classList.remove('hidden');
+                console.error('Job creation failed:', result);
             }
         } catch (error) {
             const errorDiv = document.getElementById('validation-errors');
-            errorDiv.innerHTML = `<div>Error: ${error.message}</div>`;
+            errorDiv.innerHTML = `<div><strong>Error:</strong> ${error.message}</div>`;
             errorDiv.classList.remove('hidden');
+            console.error('Job creation error:', error);
         }
     }
 </script>

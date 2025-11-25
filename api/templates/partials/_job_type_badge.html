@@ -1,0 +1,11 @@
+{% if job_type == "HttpRequest" %}
+<span class="badge badge-info">HTTP</span>
+{% elif job_type == "DatabaseQuery" %}
+<span class="badge badge-info">Database</span>
+{% elif job_type == "FileProcessing" %}
+<span class="badge badge-info">File</span>
+{% elif job_type == "Sftp" %}
+<span class="badge badge-info">SFTP</span>
+{% else %}
+<span class="badge badge-secondary">{{ job_type }}</span>
+{% endif %}

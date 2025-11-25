@@ -1,0 +1,171 @@
+<!-- Import Job Modal -->
+<div id="import-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Import Job</h3>
+            <button class="modal-close"
+                onclick="document.getElementById('import-modal').style.display='none'">×</button>
+        </div>
+        <div class="modal-body">
+            <form id="import-form">
+                <div class="form-group">
+                    <label for="job-file">Select Job Definition File (JSON)</label>
+                    <input type="file" id="job-file" accept=".json" required>
+                </div>
+                <div id="sensitive-data-fields" style="display: none; margin-top: 20px;">
+                    <h4>Sensitive Data</h4>
+                    <p style="color: #7f8c8d; font-size: 14px;">
+                        The job definition contains masked sensitive fields. Please provide the actual values:
+                    </p>
+                    <div id="sensitive-fields-container"></div>
+                </div>
+                <div class="form-actions" style="margin-top: 20px;">
+                    <button type="button" class="btn btn-secondary"
+                        onclick="document.getElementById('import-modal').style.display='none'">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        Import Job
+                    </button>
+                </div>
+            </form>
+            <div id="import-result" style="display: none; margin-top: 20px;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Import job functionality
+    document.getElementById('import-form').addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const fileInput = document.getElementById('job-file');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            alert('Please select a file');
+            return;
+        }
+
+        try {
+            const text = await file.text();
+            const jobDefinition = JSON.parse(text);
+
+            // Collect sensitive data from form fields
+            const sensitiveData = {};
+            const sensitiveInputs = document.querySelectorAll('[data-sensitive-field]');
+            sensitiveInputs.forEach(input => {
+                const fieldPath = input.getAttribute('data-sensitive-field');
+                if (input.value) {
+                    sensitiveData[fieldPath] = input.value;
+                }
+            });
+
+            // Get JWT token from localStorage
+            const token = localStorage.getItem('auth_token');
+
+            if (!token) {
+                throw new Error('Authentication token not found. Please login again.');
+            }
+
+            // Send import request
+            const response = await fetch('/api/jobs/import', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    job_definition: jobDefinition,
+                    sensitive_data: sensitiveData
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                document.getElementById('import-result').innerHTML = `
+                <div class="alert alert-success">
+                    ✓ Job imported successfully! Job ID: ${result.data}
+                </div>
+            `;
+                document.getElementById('import-result').style.display = 'block';
+
+                // Refresh job list after 2 seconds
+                setTimeout(() => {
+                    document.getElementById('import-modal').style.display = 'none';
+                    window.location.reload();
+                }, 2000);
+            } else {
+                document.getElementById('import-result').innerHTML = `
+                <div class="alert alert-error">
+                    ✗ Import failed: ${result.error || 'Unknown error'}
+                </div>
+            `;
+                document.getElementById('import-result').style.display = 'block';
+            }
+        } catch (error) {
+            document.getElementById('import-result').innerHTML = `
+            <div class="alert alert-error">
+                ✗ Error: ${error.message}
+            </div>
+        `;
+            document.getElementById('import-result').style.display = 'block';
+        }
+    });
+
+    // Detect sensitive fields when file is selected
+    document.getElementById('job-file').addEventListener('change', async function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const jobDefinition = JSON.parse(text);
+
+            // Find masked sensitive fields
+            const sensitiveFields = findSensitiveFields(jobDefinition);
+
+            if (sensitiveFields.length > 0) {
+                const container = document.getElementById('sensitive-fields-container');
+                container.innerHTML = '';
+
+                sensitiveFields.forEach(field => {
+                    const div = document.createElement('div');
+                    div.className = 'form-group';
+                    div.innerHTML = `
+                    <label for="sensitive-${field.path}">${field.label}</label>
+                    <input type="${field.type}" id="sensitive-${field.path}" 
+                           data-sensitive-field="${field.path}" 
+                           placeholder="Enter ${field.label}" required>
+                `;
+                    container.appendChild(div);
+                });
+
+                document.getElementById('sensitive-data-fields').style.display = 'block';
+            } else {
+                document.getElementById('sensitive-data-fields').style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error parsing job file:', error);
+        }
+    });
+
+    function findSensitiveFields(obj, path = '', fields = []) {
+        if (typeof obj !== 'object' || obj === null) return fields;
+
+        for (const [key, value] of Object.entries(obj)) {
+            const currentPath = path ? `${path}.${key}` : key;
+
+            if (typeof value === 'string' && value === '***MASKED***') {
+                const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                const type = key.toLowerCase().includes('password') || key.toLowerCase().includes('secret') ? 'password' : 'text';
+                fields.push({ path: currentPath, label, type });
+            } else if (typeof value === 'object') {
+                findSensitiveFields(value, currentPath, fields);
+            }
+        }
+
+        return fields;
+    }
+</script>

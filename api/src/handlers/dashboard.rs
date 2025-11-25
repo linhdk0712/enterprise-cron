@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
+    http::HeaderMap,
     response::Html,
 };
 use chrono::{Duration, Utc};
@@ -31,10 +32,16 @@ pub struct ExecutionQueryParams {
 }
 
 /// Dashboard index page
-#[tracing::instrument(skip(state))]
-pub async fn dashboard_index(State(state): State<AppState>) -> Result<Html<String>, ErrorResponse> {
+#[tracing::instrument(skip(state, headers))]
+pub async fn dashboard_index(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Html<String>, ErrorResponse> {
     let mut context = Context::new();
     context.insert("active_page", "dashboard");
+
+    let is_htmx = headers.get("HX-Request").is_some();
+    context.insert("is_htmx", &is_htmx);
 
     // Get dashboard statistics
     let total_jobs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM jobs")
@@ -123,16 +130,27 @@ pub async fn dashboard_index(State(state): State<AppState>) -> Result<Html<Strin
     let active_jobs: Vec<serde_json::Value> = vec![];
     context.insert("active_jobs", &active_jobs);
 
+    // If HTMX request, return only the content partial
+    // Otherwise, return the full page with layout
+    let template = if is_htmx {
+        "_dashboard_content.html"
+    } else {
+        "dashboard.html"
+    };
+
     let html = TEMPLATES
-        .render("dashboard.html", &context)
+        .render(template, &context)
         .map_err(|e| ErrorResponse::new("template_error", &format!("Template error: {}", e)))?;
 
     Ok(Html(html))
 }
 
 /// Jobs list partial (HTMX)
-#[tracing::instrument(skip(state))]
-pub async fn jobs_partial(State(state): State<AppState>) -> Result<Html<String>, ErrorResponse> {
+#[tracing::instrument(skip(_state, headers))]
+pub async fn jobs_partial(
+    State(_state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Html<String>, ErrorResponse> {
     let mut context = Context::new();
     context.insert("active_page", "jobs");
 
@@ -140,17 +158,29 @@ pub async fn jobs_partial(State(state): State<AppState>) -> Result<Html<String>,
     let jobs: Vec<serde_json::Value> = vec![];
     context.insert("jobs", &jobs);
 
+    // Check if this is an HTMX request
+    let is_htmx = headers.get("HX-Request").is_some();
+    context.insert("is_htmx", &is_htmx);
+
+    // If HTMX request, return only the content partial
+    // Otherwise, return the full page with layout
+    let template = if is_htmx {
+        "_jobs_content.html"
+    } else {
+        "jobs.html"
+    };
+
     let html = TEMPLATES
-        .render("jobs.html", &context)
+        .render(template, &context)
         .map_err(|e| ErrorResponse::new("template_error", &format!("Template error: {}", e)))?;
 
     Ok(Html(html))
 }
 
 /// Job details partial (HTMX)
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(_state))]
 pub async fn job_details_partial(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Html<String>, ErrorResponse> {
     let mut context = Context::new();
@@ -180,13 +210,17 @@ pub async fn job_details_partial(
 }
 
 /// Executions partial (HTMX)
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, headers))]
 pub async fn executions_partial(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<ExecutionQueryParams>,
 ) -> Result<Html<String>, ErrorResponse> {
     let mut context = Context::new();
     context.insert("active_page", "executions");
+
+    let is_htmx = headers.get("HX-Request").is_some();
+    context.insert("is_htmx", &is_htmx);
 
     let limit = params.limit.unwrap_or(50);
     let offset = params.offset.unwrap_or(0);
@@ -232,27 +266,47 @@ pub async fn executions_partial(
     context.insert("offset", &offset);
     context.insert("has_more", &(executions.len() as i64 == limit));
 
+    // If HTMX request, return only the content partial
+    // Otherwise, return the full page with layout
+    let template = if is_htmx {
+        "_executions_content.html"
+    } else {
+        "executions.html"
+    };
+
     let html = TEMPLATES
-        .render("executions.html", &context)
+        .render(template, &context)
         .map_err(|e| ErrorResponse::new("template_error", &format!("Template error: {}", e)))?;
 
     Ok(Html(html))
 }
 
 /// Variables partial (HTMX)
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(_state, headers))]
 pub async fn variables_partial(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Html<String>, ErrorResponse> {
     let mut context = Context::new();
     context.insert("active_page", "variables");
+
+    let is_htmx = headers.get("HX-Request").is_some();
+    context.insert("is_htmx", &is_htmx);
 
     // Fetch all variables (placeholder for now)
     let variables: Vec<serde_json::Value> = vec![];
     context.insert("variables", &variables);
 
+    // If HTMX request, return only the content partial
+    // Otherwise, return the full page with layout
+    let template = if is_htmx {
+        "_variables_content.html"
+    } else {
+        "variables.html"
+    };
+
     let html = TEMPLATES
-        .render("variables.html", &context)
+        .render(template, &context)
         .map_err(|e| ErrorResponse::new("template_error", &format!("Template error: {}", e)))?;
 
     Ok(Html(html))

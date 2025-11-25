@@ -5,11 +5,8 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nAdd comprehensive RBAC to login and resource access requirements\n\nEnhanced Requirement 19 with role-based access control and added new\nRequirement 19.1 for comprehensive RBAC implementation\n\nRequirement 19 Updates (Login Page - 10 new criteria):\n✅ Role extraction from database/JWT on authentication\n✅ Admin role with full permissions (9 categories)\n✅ Regular User role with limited permissions (4 categories)\n✅ JWT token includes roles and permissions\n✅ Dashboard displays role-specific features\n✅ Permission-based UI element visibility\n✅ 403 Forbidden for insufficient permissions\n✅ Role indicators in dashboard header (Admin/User badges)\n\nNew Requirement 19.1 (RBAC & Resource Access - 60 criteria):\n\nRole Definitions:\n✅ Two predefined roles: \"Admin\" and \"Regular User\"\n✅ Admin permissions (17 total):\n   - Jobs: read, write, execute, delete, import, export\n   - Executions: read, stop\n   - Variables: read, write, encrypt\n   - Webhooks: read, write\n   - Users: manage, role:assign\n   - System: config, audit\n   - Dashboard: admin\n✅ Regular User permissions (5 total):\n   - Jobs: read, execute (view-only, no edit/delete)\n   - Executions: read (filtered to own)\n   - Variables: read (non-sensitive only)\n   - Dashboard: user (limited features)\n\nResource Access Control:\n✅ Jobs API (10 criteria) - CRUD with permission checks\n✅ Executions API (4 criteria) - Admin sees all, users see own\n✅ Variables API (6 criteria) - Admin sees sensitive, users see public\n✅ Webhooks API (4 criteria) - Permission-based access\n✅ User Management API (7 criteria) - Admin-only with anti-escalation\n✅ System Config API (4 criteria) - Admin-only\n\nDashboard Access Control:\n✅ Admin dashboard: Full access (7 pages)\n✅ Regular User dashboard: Limited (3 pages, read-only jobs)\n✅ Dynamic UI: Hide/show buttons based on permissions\n✅ Navigation filtering based on role\n\nImport/Export Control:\n✅ Permission checks for job import/export\n✅ Sensitive data masking on export\n\nAudit and Logging:\n✅ Log all operations with user context\n✅ Log permission denials\n✅ Admin-only audit log access\n\nSecurity Features:\n✅ Token invalidation on role change\n✅ Session revocation on user disable/delete\n✅ Union permission checking (user + role)\n✅ Clear permission error messages\n✅ 404 instead of 403 for hidden resources (prevent enumeration)\n✅ Anti-privilege escalation (cannot modify own roles)\n\nInitial Setup:\n✅ Default admin user (admin/admin123)\n✅ Default roles pre-created\n✅ Password change prompt on first login\n✅ Future: Custom role support\n\nImplementation Impact:\n- Updates required: api/src/middleware/rbac.rs\n- New endpoints: /api/users/:id/roles, /api/system/config, /api/system/audit-logs\n- Dashboard updates: Role-based UI rendering\n- Database: roles and user_roles tables already exist\n- JWT claims: Include roles array\n\nSecurity Compliance:\n- RECC 2025: Error handling, tracing, audit logging\n- Principle of least privilege enforced\n- Defense in depth: Multiple validation layers\n- Comprehensive audit trail\n\nRelated:\n- Requirement 10: Base authentication & authorization\n- Requirement 19: Login page (now with RBAC)\n- Database: migrations/20250101000005_create_roles_table.sql\n- Middleware: api/src/middleware/rbac.rs (needs enhancement)\n\n🤖 Generated with Claude Code (https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(cargo build:*)",
       "Bash(git commit:*)",
-      "Bash(docker-compose build:*)",
       "Bash(wait)",
-      "Bash(docker-compose exec:*)",
       "Bash(cargo run:*)",
-      "Bash(docker-compose start:*)",
       "Bash(python3:*)",
       "Bash(cargo clean:*)",
       "Bash(RUST_LOG=debug:*)",
@@ -27,6 +24,27 @@
       "Bash(TOKEN='eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ1c2VybmFtZSI6ImFkbWluIiwicGVybWlzc2lvbnMiOlsiZGFzaGJvYXJkOmFkbWluIiwiZXhlY3V0aW9uOnJlYWQiLCJleGVjdXRpb246c3RvcCIsImpvYjpkZWxldGUiLCJqb2I6ZXhlY3V0ZSIsImpvYjpleHBvcnQiLCJqb2I6aW1wb3J0Iiwiam9iOnJlYWQiLCJqb2I6d3JpdGUiLCJyb2xlOmFzc2lnbiIsInN5c3RlbTphdWRpdCIsInN5c3RlbTpjb25maWciLCJ1c2VyOm1hbmFnZSIsInZhcmlhYmxlOmVuY3J5cHQiLCJ2YXJpYWJsZTpyZWFkIiwidmFyaWFibGU6d3JpdGUiLCJ3ZWJob29rOnJlYWQiLCJ3ZWJob29rOndyaXRlIl0sImV4cCI6MTc2NDExOTk2OCwiaWF0IjoxNzY0MDMzNTY4fQ.Rb8yefdW0HEWuZSYR5XHrnCJS_67hzd2-YEHkfUAY3c')"
     ],
     "deny": [],
-    "ask": []
+    "ask": [
+      "Bash(docker:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose start:*)",
+      "Bash(docker-compose stop:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose exec:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(docker-compose rm:*)",
+      "Bash(docker build:*)",
+      "Bash(docker run:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker start:*)",
+      "Bash(docker rm:*)"
+    ]
   }
 }

@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
     );
 
     // Initialize database connection pool
-    let pg_pool = PgPoolOptions::new()
+    let _pg_pool = PgPoolOptions::new()
         .max_connections(config.database.max_connections as u32)
         .min_connections(config.database.min_connections as u32)
         .connect(&config.database.url)
@@ -117,24 +117,11 @@ async fn main() -> Result<()> {
     tracing::info!("NATS client connected");
 
     // Initialize MinIO client
-    let minio_bucket = s3::Bucket::new(
-        &config.minio.bucket,
-        s3::Region::Custom {
-            region: config.minio.region.clone(),
-            endpoint: config.minio.endpoint.clone(),
-        },
-        s3::creds::Credentials::new(
-            Some(&config.minio.access_key),
-            Some(&config.minio.secret_key),
-            None,
-            None,
-            None,
-        )?,
-    )?;
+    let minio_client = common::storage::minio::MinioClient::new(&config.minio).await?;
     tracing::info!("MinIO client initialized");
 
     // Initialize Prometheus metrics exporter
-    let metrics_handle =
+    let _metrics_handle =
         metrics_exporter_prometheus::PrometheusBuilder::new().install_recorder()?;
     tracing::info!(port = %config.observability.metrics_port, "Metrics exporter initialized");
 
@@ -143,7 +130,7 @@ async fn main() -> Result<()> {
         db_pool,
         redis_client,
         nats_client.clone(),
-        minio_bucket,
+        minio_client,
         config.clone(),
     );
 

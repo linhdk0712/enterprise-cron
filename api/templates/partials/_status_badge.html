@@ -1,0 +1,15 @@
+{% if status == "Success" %}
+<span class="badge badge-success">Success</span>
+{% elif status == "Failed" %}
+<span class="badge badge-danger">Failed</span>
+{% elif status == "Running" %}
+<span class="badge badge-info">Running</span>
+{% elif status == "Pending" %}
+<span class="badge badge-warning">Pending</span>
+{% elif status == "Timeout" %}
+<span class="badge badge-danger">Timeout</span>
+{% elif status == "DeadLetter" %}
+<span class="badge badge-danger">Dead Letter</span>
+{% else %}
+<span class="badge badge-secondary">{{ status }}</span>
+{% endif %}

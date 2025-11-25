@@ -11,7 +11,7 @@ use common::models::{
 use common::queue::publisher::JobPublisher;
 use common::storage::service::MinIOService;
 use common::webhook::validate_webhook_signature;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -244,8 +244,8 @@ pub async fn handle_webhook(
 
     // 10. Store Job Context to MinIO
     // Requirements: 13.7 - Persist Job Context to MinIO
-    let minio_client = common::storage::MinioClient::from_bucket(state.minio_client.clone());
-    let storage_service = common::storage::MinIOServiceImpl::new(minio_client);
+    let storage_service =
+        common::storage::service::MinIOServiceImpl::new(state.minio_client.clone());
     storage_service.store_context(&context).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to store Job Context to MinIO");
         (
@@ -313,6 +313,7 @@ pub async fn handle_webhook(
 /// Create a webhook for a job
 /// Requirements: 16.1 - Generate unique webhook URL for job
 #[tracing::instrument(skip(state))]
+#[allow(dead_code)]
 pub async fn create_webhook(
     State(state): State<AppState>,
     Path(job_id): Path<Uuid>,
@@ -322,7 +323,7 @@ pub async fn create_webhook(
 
     // Check if job exists
     let job_repo = JobRepository::new(state.db_pool.clone());
-    let job = job_repo
+    let _job = job_repo
         .find_by_id(job_id)
         .await
         .map_err(|e| {
@@ -398,6 +399,7 @@ pub async fn create_webhook(
 /// Regenerate webhook URL and secret
 /// Requirements: 16.12 - Webhook URL regeneration invalidates previous URL
 #[tracing::instrument(skip(state))]
+#[allow(dead_code)]
 pub async fn regenerate_webhook(
     State(state): State<AppState>,
     Path(job_id): Path<Uuid>,
@@ -458,6 +460,7 @@ pub async fn regenerate_webhook(
 
 /// Get webhook for a job
 #[tracing::instrument(skip(state))]
+#[allow(dead_code)]
 pub async fn get_webhook(
     State(state): State<AppState>,
     Path(job_id): Path<Uuid>,
@@ -489,6 +492,7 @@ pub async fn get_webhook(
 
 /// Delete webhook for a job
 #[tracing::instrument(skip(state))]
+#[allow(dead_code)]
 pub async fn delete_webhook(
     State(state): State<AppState>,
     Path(job_id): Path<Uuid>,
@@ -538,6 +542,7 @@ pub async fn delete_webhook(
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct CreateWebhookRequest {
     pub rate_limit_max_requests: Option<i32>,
     pub rate_limit_window_seconds: Option<i32>,

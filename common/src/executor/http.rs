@@ -15,7 +15,6 @@ use std::time::Duration;
 /// HttpExecutor executes HTTP request jobs
 pub struct HttpExecutor {
     client: Client,
-    timeout: Duration,
     reference_resolver: Arc<ReferenceResolver>,
 }
 
@@ -31,7 +30,6 @@ impl HttpExecutor {
 
         Ok(Self {
             client,
-            timeout: Duration::from_secs(timeout_seconds),
             reference_resolver: Arc::new(ReferenceResolver::new()),
         })
     }
@@ -50,7 +48,6 @@ impl HttpExecutor {
 
         Ok(Self {
             client,
-            timeout: Duration::from_secs(timeout_seconds),
             reference_resolver,
         })
     }

@@ -1,0 +1,92 @@
+{% if jobs %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Schedule</th>
+            <th>Status</th>
+            <th>Next Run</th>
+            <th>Last Run</th>
+            <th>Success Rate</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for job in jobs %}
+        <tr>
+            <td>
+                <a href="/dashboard/jobs/{{ job.id }}" hx-get="/dashboard/jobs/{{ job.id }}" hx-target="#main-content"
+                    hx-push-url="true" style="color: #3498db; text-decoration: none;">
+                    {{ job.name }}
+                </a>
+            </td>
+            <td>
+                {% if job.job_type %}
+                <span class="badge badge-info">{{ job.job_type }}</span>
+                {% else %}
+                <span class="badge badge-secondary">Unknown</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if job.schedule_type %}
+                <small>{{ job.schedule_type }}</small>
+                {% else %}
+                <span class="badge badge-secondary">Manual</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if job.enabled %}
+                <span class="badge badge-success">Enabled</span>
+                {% else %}
+                <span class="badge badge-secondary">Disabled</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if job.next_run_time %}
+                <small>{{ job.next_run_time }}</small>
+                {% else %}
+                <small>-</small>
+                {% endif %}
+            </td>
+            <td>
+                {% if job.last_execution_at %}
+                <small>{{ job.last_execution_at }}</small>
+                {% else %}
+                <small>Never</small>
+                {% endif %}
+            </td>
+            <td>
+                {% if job.total_executions and job.total_executions > 0 %}
+                {% set rate = (job.successful_executions / job.total_executions * 100) | round %}
+                <span
+                    class="badge {% if rate >= 90 %}badge-success{% elif rate >= 70 %}badge-warning{% else %}badge-error{% endif %}">
+                    {{ rate }}%
+                </span>
+                {% else %}
+                <span class="badge badge-secondary">N/A</span>
+                {% endif %}
+            </td>
+            <td>
+                <button class="btn btn-sm btn-primary" hx-post="/api/jobs/{{ job.id }}/trigger"
+                    hx-confirm="Trigger job '{{ job.name }}' now?" hx-indicator="#trigger-indicator-{{ job.id }}">
+                    ▶ Trigger
+                </button>
+                <span id="trigger-indicator-{{ job.id }}" class="htmx-indicator">
+                    <span class="spinner"></span>
+                </span>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+    <h3>No jobs found</h3>
+    <p>Create your first job to get started</p>
+</div>
+{% endif %}

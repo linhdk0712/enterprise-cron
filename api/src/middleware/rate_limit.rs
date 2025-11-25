@@ -14,6 +14,7 @@ impl RateLimiter {
 
     /// Check if a webhook request should be rate limited
     /// Returns Ok(()) if allowed, Err if rate limit exceeded
+    #[allow(dead_code)]
     #[tracing::instrument(skip(self))]
     pub async fn check_rate_limit(
         &self,

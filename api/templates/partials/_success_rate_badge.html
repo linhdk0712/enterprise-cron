@@ -1,0 +1,12 @@
+{% if total_executions > 0 %}
+{% set success_rate = (successful_executions / total_executions * 100) | round %}
+{% if success_rate >= 90 %}
+<span class="badge badge-success">{{ success_rate }}%</span>
+{% elif success_rate >= 70 %}
+<span class="badge badge-warning">{{ success_rate }}%</span>
+{% else %}
+<span class="badge badge-danger">{{ success_rate }}%</span>
+{% endif %}
+{% else %}
+<span class="badge badge-secondary">N/A</span>
+{% endif %}

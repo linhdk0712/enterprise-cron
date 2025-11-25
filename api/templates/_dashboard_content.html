@@ -1,0 +1,134 @@
+<script>
+    console.log('=== DASHBOARD DEBUG ===');
+    console.log('Stats:', {{ stats | json_encode() | safe }});
+    console.log('Recent Executions:', {{ recent_executions | json_encode() | safe }});
+    console.log('Active Jobs:', {{ active_jobs | json_encode() | safe }});
+    console.log('======================');
+</script>
+
+<div
+    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+    <!-- Total Jobs -->
+    <div class="stat-card" style="background: #2c3e50; color: white; padding: 1.5rem; border-radius: 8px;">
+        <div style="font-size: 0.9rem; opacity: 0.9;">Total Jobs</div>
+        <div style="font-size: 2rem; font-weight: bold; margin: 0.5rem 0;">{{ stats.total_jobs|default(value=0) }}</div>
+        <div style="font-size: 0.85rem; color: #27ae60;">{{ stats.enabled_jobs|default(value=0) }} enabled</div>
+    </div>
+
+    <!-- Running Now -->
+    <div class="stat-card" style="background: #3498db; color: white; padding: 1.5rem; border-radius: 8px;">
+        <div style="font-size: 0.9rem; opacity: 0.9;">Running Now</div>
+        <div style="font-size: 2rem; font-weight: bold; margin: 0.5rem 0;">{{ stats.running_executions|default(value=0)
+            }}</div>
+        <div style="font-size: 0.85rem;">Active executions</div>
+    </div>
+
+    <!-- Success Rate -->
+    <div class="stat-card" style="background: #27ae60; color: white; padding: 1.5rem; border-radius: 8px;">
+        <div style="font-size: 0.9rem; opacity: 0.9;">Success Rate (24h)</div>
+        <div style="font-size: 2rem; font-weight: bold; margin: 0.5rem 0;">
+            {% if stats.success_rate %}{{ stats.success_rate|round }}%{% else %}N/A{% endif %}
+        </div>
+        <div style="font-size: 0.85rem;">{{ stats.successful_executions_24h|default(value=0) }} / {{
+            stats.total_executions_24h|default(value=0) }} executions</div>
+    </div>
+
+    <!-- Failed -->
+    <div class="stat-card" style="background: #e74c3c; color: white; padding: 1.5rem; border-radius: 8px;">
+        <div style="font-size: 0.9rem; opacity: 0.9;">Failed (24h)</div>
+        <div style="font-size: 2rem; font-weight: bold; margin: 0.5rem 0;">{{
+            stats.failed_executions_24h|default(value=0) }}</div>
+        <div style="font-size: 0.85rem;">Requires attention</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Recent Activity</h2>
+        <a href="/dashboard/executions" hx-get="/dashboard/executions" hx-target="#main-content" hx-push-url="true"
+            class="btn btn-secondary btn-sm">
+            View All
+        </a>
+    </div>
+
+    <div id="recent-activity" hx-get="/dashboard" hx-trigger="sse:execution_status_changed,sse:job_status_changed"
+        hx-select="#recent-activity" hx-swap="outerHTML">
+        {% include "partials/_execution_table.html" %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Active Jobs</h2>
+        <a href="/dashboard/jobs" hx-get="/dashboard/jobs" hx-target="#main-content" hx-push-url="true"
+            class="btn btn-secondary btn-sm">
+            View All
+        </a>
+    </div>
+
+    {% if active_jobs %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Next Run</th>
+                <th>Success Rate</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for job in active_jobs %}
+            <tr>
+                <td>
+                    <a href="/dashboard/jobs/{{ job.id }}" hx-get="/dashboard/jobs/{{ job.id }}"
+                        hx-target="#main-content" hx-push-url="true" style="color: #3498db; text-decoration: none;">
+                        {{ job.name }}
+                    </a>
+                </td>
+                <td>
+                    {% if job.job_type %}
+                    <span class="badge badge-info">{{ job.job_type }}</span>
+                    {% else %}
+                    <span class="badge badge-secondary">Unknown</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if job.next_run_time %}
+                    <small>{{ job.next_run_time }}</small>
+                    {% else %}
+                    <small>-</small>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if job.total_executions and job.total_executions > 0 %}
+                    {% set rate = (job.successful_executions / job.total_executions * 100) | round %}
+                    <span
+                        class="badge {% if rate >= 90 %}badge-success{% elif rate >= 70 %}badge-warning{% else %}badge-error{% endif %}">
+                        {{ rate }}%
+                    </span>
+                    {% else %}
+                    <span class="badge badge-secondary">N/A</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-primary" hx-post="/api/jobs/{{ job.id }}/trigger"
+                        hx-confirm="Trigger job '{{ job.name }}' now?" hx-swap="none">
+                        ▶
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <h3>No active jobs</h3>
+        <p>Create and enable jobs to see them here</p>
+    </div>
+    {% endif %}
+</div>

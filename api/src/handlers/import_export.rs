@@ -76,8 +76,7 @@ pub async fn export_job(
     Json(req): Json<ExportJobRequest>,
 ) -> Result<Json<SuccessResponse<ExportJobResponse>>, ErrorResponse> {
     // Create import/export service
-    let minio_client = common::storage::MinioClient::from_bucket(state.minio_client.clone());
-    let minio_service = MinIOServiceImpl::new(minio_client);
+    let minio_service = MinIOServiceImpl::new(state.minio_client.clone());
     let service = ImportExportServiceImpl::new(
         state.db_pool.clone(),
         minio_service,
@@ -113,8 +112,7 @@ pub async fn export_jobs_bulk(
     Json(req): Json<ExportJobsBulkRequest>,
 ) -> Result<Json<SuccessResponse<ExportJobsBulkResponse>>, ErrorResponse> {
     // Create import/export service
-    let minio_client = common::storage::MinioClient::from_bucket(state.minio_client.clone());
-    let minio_service = MinIOServiceImpl::new(minio_client);
+    let minio_service = MinIOServiceImpl::new(state.minio_client.clone());
     let service = ImportExportServiceImpl::new(
         state.db_pool.clone(),
         minio_service,
@@ -153,8 +151,7 @@ pub async fn import_job(
     Json(req): Json<ImportJobRequest>,
 ) -> Result<Json<SuccessResponse<Uuid>>, ErrorResponse> {
     // Create import/export service
-    let minio_client = common::storage::MinioClient::from_bucket(state.minio_client.clone());
-    let minio_service = MinIOServiceImpl::new(minio_client);
+    let minio_service = MinIOServiceImpl::new(state.minio_client.clone());
     let service = ImportExportServiceImpl::new(
         state.db_pool.clone(),
         minio_service,
@@ -181,8 +178,7 @@ pub async fn import_jobs_bulk(
     Json(req): Json<ImportJobsBulkRequest>,
 ) -> Result<Json<SuccessResponse<ImportJobsBulkResponse>>, ErrorResponse> {
     // Create import/export service
-    let minio_client = common::storage::MinioClient::from_bucket(state.minio_client.clone());
-    let minio_service = MinIOServiceImpl::new(minio_client);
+    let minio_service = MinIOServiceImpl::new(state.minio_client.clone());
     let service = ImportExportServiceImpl::new(
         state.db_pool.clone(),
         minio_service,

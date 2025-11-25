@@ -3,6 +3,7 @@ use tokio::sync::broadcast;
 
 use common::config::Settings;
 use common::db::DbPool;
+use common::storage::minio::MinioClient;
 
 /// Application state shared across all handlers
 #[derive(Clone, Debug)]
@@ -10,7 +11,7 @@ pub struct AppState {
     pub db_pool: DbPool,
     pub redis_client: redis::Client,
     pub nats_client: async_nats::Client,
-    pub minio_client: Arc<s3::Bucket>,
+    pub minio_client: MinioClient,
     pub config: Arc<Settings>,
     pub sse_tx: broadcast::Sender<SseEvent>,
 }
@@ -43,7 +44,7 @@ impl AppState {
         db_pool: DbPool,
         redis_client: redis::Client,
         nats_client: async_nats::Client,
-        minio_client: s3::Bucket,
+        minio_client: MinioClient,
         config: Settings,
     ) -> Self {
         let (sse_tx, _) = broadcast::channel(100);
@@ -52,7 +53,7 @@ impl AppState {
             db_pool,
             redis_client,
             nats_client,
-            minio_client: Arc::new(minio_client),
+            minio_client,
             config: Arc::new(config),
             sse_tx,
         }

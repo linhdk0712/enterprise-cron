@@ -80,6 +80,10 @@ RUN apt-get update && apt-get install -y \
     mkdir -p /app/config /app/migrations && \
     chown -R cronuser:cronuser /app
 
+# Copy MinIO certificate and add to trust store (for development with self-signed certs)
+COPY config/certs/minio/public.crt /usr/local/share/ca-certificates/minio.crt
+RUN update-ca-certificates
+
 # Copy binaries from builder
 COPY --from=builder --chown=cronuser:cronuser /app/target/release/api /usr/local/bin/api
 COPY --from=builder --chown=cronuser:cronuser /app/target/release/scheduler /usr/local/bin/scheduler

@@ -23,6 +23,7 @@ use tracing::{error, info, instrument, warn};
 
 /// Worker job consumer that processes jobs from the queue
 /// Requirements: 13.4, 13.7, 13.8 - Multi-step job execution with MinIO integration
+#[allow(dead_code)]
 pub struct WorkerJobConsumer {
     consumer: NatsJobConsumer,
     job_repo: Arc<JobRepository>,
@@ -38,6 +39,7 @@ pub struct WorkerJobConsumer {
     nats_client: Option<async_nats::Client>,
 }
 
+#[allow(dead_code)]
 impl WorkerJobConsumer {
     /// Create a new worker job consumer
     /// Requirements: 13.4 - Initialize worker with MinIO service for multi-step jobs

@@ -1,0 +1,27 @@
+<script>
+    console.log('=== JOBS PAGE DEBUG ===');
+    console.log('Jobs:', {{ jobs | json_encode() | safe }});
+    console.log('Total jobs:', {{ jobs | length }});
+    console.log('======================');
+</script>
+
+<div class="card" hx-get="/dashboard/jobs" hx-trigger="sse:job_created,sse:job_deleted,sse:job_status_changed"
+    hx-select=".card" hx-swap="outerHTML">
+    <div class="card-header">
+        <h2>Jobs</h2>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-secondary" onclick="document.getElementById('import-modal').style.display='block'">
+                📥 Import Job
+            </button>
+            <a href="/dashboard/jobs/new" class="btn btn-primary" hx-get="/dashboard/jobs/new" hx-target="#main-content"
+                hx-push-url="true">
+                + Create Job
+            </a>
+        </div>
+    </div>
+
+    {% include "partials/_job_table.html" %}
+</div>
+
+{% include "partials/_job_import_modal.html" %}
+{% include "partials/_modal_styles.html" %}

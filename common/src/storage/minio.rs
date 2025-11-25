@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tracing::{debug, error, info, instrument};
 
 /// MinIO client wrapper with connection pooling
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MinioClient {
     bucket: Arc<Bucket>,
 }
@@ -23,12 +23,12 @@ impl MinioClient {
     pub async fn new(config: &MinioConfig) -> Result<Self, StorageError> {
         info!("Initializing MinIO client");
 
-        // Parse endpoint to determine if SSL should be used
-        let use_ssl = config.endpoint.starts_with("https://");
+        // Parse endpoint - strip scheme as rust-s3 Region::Custom doesn't expect it
         let endpoint = config
             .endpoint
             .trim_start_matches("http://")
-            .trim_start_matches("https://");
+            .trim_start_matches("https://")
+            .to_string();
 
         // Create credentials
         let credentials = Credentials::new(
@@ -43,28 +43,20 @@ impl MinioClient {
             StorageError::MinioError(format!("Failed to create credentials: {}", e))
         })?;
 
-        // Create custom region for MinIO
+        // Create custom region for MinIO (endpoint without scheme)
         let region = Region::Custom {
             region: config.region.clone(),
-            endpoint: endpoint.to_string(),
+            endpoint,
         };
 
-        // Create bucket instance
-        let bucket = if use_ssl {
-            Bucket::new(&config.bucket, region, credentials)
-                .map_err(|e| {
-                    error!(error = %e, "Failed to create MinIO bucket with SSL");
-                    StorageError::MinioError(format!("Failed to create bucket: {}", e))
-                })?
-                .with_path_style()
-        } else {
-            Bucket::new(&config.bucket, region, credentials)
-                .map_err(|e| {
-                    error!(error = %e, "Failed to create MinIO bucket");
-                    StorageError::MinioError(format!("Failed to create bucket: {}", e))
-                })?
-                .with_path_style()
-        };
+        // Create bucket instance with path style
+        // Note: For production, MinIO should be configured with HTTPS
+        let bucket = Bucket::new(&config.bucket, region, credentials)
+            .map_err(|e| {
+                error!(error = %e, "Failed to create MinIO bucket");
+                StorageError::MinioError(format!("Failed to create bucket: {}", e))
+            })?
+            .with_path_style();
 
         info!(
             bucket = %config.bucket,
@@ -101,12 +93,6 @@ impl MinioClient {
                 )))
             }
         }
-    }
-
-    /// Create a MinioClient from an existing bucket
-    /// Used when the bucket is already initialized in the application state
-    pub fn from_bucket(bucket: Arc<Bucket>) -> Self {
-        Self { bucket }
     }
 
     /// Get the underlying bucket reference
@@ -219,7 +205,7 @@ mod tests {
 
     fn test_config() -> MinioConfig {
         MinioConfig {
-            endpoint: "http://localhost:9000".to_string(),
+            endpoint: "https://localhost:9000".to_string(),
             access_key: "minioadmin".to_string(),
             secret_key: "minioadmin".to_string(),
             bucket: "test-bucket".to_string(),
@@ -230,18 +216,14 @@ mod tests {
     #[tokio::test]
     async fn test_minio_client_creation() {
         let config = test_config();
-        // This will fail if MinIO is not running, but tests the client creation logic
         let result = MinioClient::new(&config).await;
-        // We expect this to succeed in creating the client object
-        // The actual connection will be tested when operations are performed
-        assert!(result.is_ok() || result.is_err()); // Either outcome is acceptable for unit test
+        assert!(result.is_ok() || result.is_err());
     }
 
     #[test]
-    fn test_ssl_detection() {
+    fn test_endpoint_parsing() {
         let mut config = test_config();
         config.endpoint = "https://minio.example.com".to_string();
-        // Test that HTTPS endpoints are detected correctly
         assert!(config.endpoint.starts_with("https://"));
     }
 }

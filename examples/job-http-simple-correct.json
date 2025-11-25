@@ -4,30 +4,31 @@
     "schedule": {
         "type": "cron",
         "expression": "0 0 * * * *",
-        "timezone": "Asia/Ho_Chi_Minh"
+        "timezone": "Asia/Ho_Chi_Minh",
+        "end_date": null
     },
     "triggers": {
         "scheduled": true,
-        "manual": true
+        "manual": true,
+        "webhook": null
     },
     "steps": [
         {
             "id": "fetch_weather",
             "name": "Fetch Weather",
-            "type": {
-                "type": "http_request",
-                "method": "GET",
-                "url": "https://api.openweathermap.org/data/2.5/weather?q=Hanoi&appid=${WEATHER_API_KEY}",
-                "headers": {
-                    "Accept": "application/json"
-                },
-                "body": null,
-                "auth": null
+            "type": "http_request",
+            "method": "GET",
+            "url": "https://api.openweathermap.org/data/2.5/weather?q=Hanoi&appid=${WEATHER_API_KEY}",
+            "headers": {
+                "Accept": "application/json"
             },
+            "body": null,
+            "auth": null,
             "condition": null
         }
     ],
     "timeout_seconds": 60,
     "max_retries": 3,
-    "allow_concurrent": false
+    "allow_concurrent": false,
+    "enabled": true
 }

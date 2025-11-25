@@ -9,11 +9,10 @@ use uuid::Uuid;
 use crate::handlers::{ErrorResponse, SuccessResponse};
 use crate::state::{AppState, SseEvent};
 use common::db::repositories::execution::ExecutionRepository;
-use common::db::repositories::job::{JobRepository, JobStats};
+use common::db::repositories::job::JobRepository;
 use common::models::{
     ExecutionStatus, Job, JobExecution, JobStep, Schedule, TriggerConfig, TriggerSource,
 };
-use common::queue::publisher::JobPublisher;
 
 /// Request to create a new job
 #[derive(Debug, Deserialize)]
@@ -242,9 +241,8 @@ pub async fn get_job(
             )
         })?;
 
-    let definition_bytes = definition_json.bytes();
     let job_definition: serde_json::Value =
-        serde_json::from_slice(&definition_bytes).map_err(|e| {
+        serde_json::from_slice(&definition_json).map_err(|e| {
             ErrorResponse::new(
                 "deserialization_error",
                 &format!("Failed to parse job definition: {}", e),
@@ -297,9 +295,8 @@ pub async fn update_job(
             )
         })?;
 
-    let definition_bytes = definition_json.bytes();
     let mut job_definition: serde_json::Value =
-        serde_json::from_slice(&definition_bytes).map_err(|e| {
+        serde_json::from_slice(&definition_json).map_err(|e| {
             ErrorResponse::new(
                 "deserialization_error",
                 &format!("Failed to parse job definition: {}", e),

@@ -32,7 +32,6 @@ pub type JobHandler = Arc<
 
 /// NATS-based job consumer implementation
 pub struct NatsJobConsumer {
-    client: NatsClient,
     consumer: PullConsumer,
     handler: JobHandler,
     batch_size: usize,
@@ -50,7 +49,6 @@ impl NatsJobConsumer {
         let consumer = client.get_or_create_consumer().await?;
 
         Ok(Self {
-            client,
             consumer,
             handler,
             batch_size: 10,

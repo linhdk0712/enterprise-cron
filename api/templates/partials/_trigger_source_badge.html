@@ -1,0 +1,9 @@
+{% if trigger_source == "Scheduled" %}
+<span class="badge badge-info">⏰ Scheduled</span>
+{% elif trigger_source == "Manual" %}
+<span class="badge badge-info">👤 Manual</span>
+{% elif trigger_source == "Webhook" %}
+<span class="badge badge-info">🔗 Webhook</span>
+{% else %}
+<span class="badge badge-secondary">{{ trigger_source }}</span>
+{% endif %}

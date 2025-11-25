@@ -349,7 +349,8 @@
         <div class="container">
             <h1>🕐 Vietnam Enterprise Cron</h1>
             <nav>
-                <a href="/dashboard" {% if active_page=="dashboard" %}class="active" {% endif %}>Dashboard</a>
+                <a href="/dashboard" hx-get="/dashboard" hx-target="#main-content" hx-push-url="true" {% if
+                    active_page=="dashboard" %}class="active" {% endif %}>Dashboard</a>
                 <a href="/dashboard/jobs" hx-get="/dashboard/jobs" hx-target="#main-content" hx-push-url="true" {% if
                     active_page=="jobs" %}class="active" {% endif %}>Jobs</a>
                 <a href="/dashboard/executions" hx-get="/dashboard/executions" hx-target="#main-content"

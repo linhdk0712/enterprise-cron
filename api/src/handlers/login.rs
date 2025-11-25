@@ -3,15 +3,15 @@ use axum::{
     response::{Html, IntoResponse, Redirect},
     Form,
 };
-use chrono::{Duration, Utc};
 use common::auth::{DatabaseAuthService, JwtService};
 use common::db::repositories::user::UserRepository;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct LoginQuery {
     redirect: Option<String>,
     error: Option<String>,

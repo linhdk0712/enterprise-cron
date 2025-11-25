@@ -205,7 +205,6 @@ impl DatabaseExecutor {
         query: &str,
         query_type: &QueryType,
     ) -> Result<serde_json::Value, ExecutionError> {
-        use mysql_async::prelude::*;
 
         tracing::info!("Connecting to MySQL database");
 

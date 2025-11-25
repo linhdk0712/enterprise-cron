@@ -3,7 +3,7 @@ use axum::{
     Extension, Json,
 };
 use common::db::repositories::user::UserRepository;
-use common::models::{Role, User, UserClaims};
+use common::models::{Role, UserClaims};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

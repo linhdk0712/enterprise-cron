@@ -169,8 +169,11 @@ pub enum HttpAuth {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DatabaseType {
+    #[serde(rename = "postgresql")]
     PostgreSQL,
+    #[serde(rename = "mysql")]
     MySQL,
+    #[serde(rename = "oracle")]
     Oracle,
 }
 
