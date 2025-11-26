@@ -55,6 +55,12 @@ pub struct JobStep {
     #[serde(rename = "type")]
     pub step_type: JobType,
     pub condition: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_failure: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_count: Option<i32>,
 }
 
 /// TriggerConfig defines how a job can be triggered
