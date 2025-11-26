@@ -1,0 +1,39 @@
+{
+    "id": "bbd0f989-7c13-4c19-b8a6-b258a1abb4da",
+    "name": "Fetch Weather Data",
+    "description": "Fetch weather data from external API",
+    "schedule": null,
+    "steps": [
+        {
+            "id": "step-1",
+            "name": "Fetch Weather",
+            "type": {
+                "HttpRequest": {
+                    "url": "https://api.open-meteo.com/v1/forecast?latitude=21.0285&longitude=105.8542&current_weather=true",
+                    "method": "GET",
+                    "headers": {
+                        "Accept": "application/json"
+                    },
+                    "body": null,
+                    "auth": null
+                }
+            },
+            "condition": null,
+            "on_failure": "stop",
+            "timeout_seconds": 30,
+            "retry_count": 3
+        }
+    ],
+    "triggers": {
+        "scheduled": true,
+        "manual": true,
+        "webhook": null
+    },
+    "enabled": true,
+    "timeout_seconds": 300,
+    "max_retries": 10,
+    "allow_concurrent": false,
+    "minio_definition_path": "jobs/bbd0f989-7c13-4c19-b8a6-b258a1abb4da/definition.json",
+    "created_at": "2025-11-25T10:00:00Z",
+    "updated_at": "2025-11-25T10:00:00Z"
+}

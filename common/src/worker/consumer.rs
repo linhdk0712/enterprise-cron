@@ -9,7 +9,7 @@ use crate::db::repositories::job::JobRepository;
 use crate::errors::QueueError;
 use crate::executor::JobExecutor;
 use crate::models::{ExecutionStatus, Job, JobContext, JobExecution, JobStep, JobType, StepOutput};
-use crate::queue::{JobConsumer, JobHandler, JobMessage, NatsJobConsumer};
+use crate::queue::{JobConsumer, JobHandler, JobMessage, NatsClient, NatsJobConsumer};
 use crate::retry::{ExponentialBackoff, RetryStrategy};
 use crate::storage::MinIOService;
 use crate::worker::context::ContextManager;
@@ -45,7 +45,7 @@ impl WorkerJobConsumer {
     /// Requirements: 13.4 - Initialize worker with MinIO service for multi-step jobs
     #[instrument(skip_all)]
     pub async fn new(
-        consumer: NatsJobConsumer,
+        nats_client: NatsClient,
         job_repo: Arc<JobRepository>,
         execution_repo: Arc<ExecutionRepository>,
         context_manager: Arc<dyn ContextManager>,
@@ -53,9 +53,24 @@ impl WorkerJobConsumer {
         http_executor: Arc<dyn JobExecutor>,
         database_executor: Arc<dyn JobExecutor>,
         file_executor: Arc<dyn JobExecutor>,
-        nats_client: Option<async_nats::Client>,
+        nats_client_for_status: Option<async_nats::Client>,
     ) -> Result<Self, QueueError> {
         info!("Creating worker job consumer with MinIO integration");
+
+        // Create handler with all dependencies
+        let handler = Self::create_handler_static(
+            Arc::clone(&job_repo),
+            Arc::clone(&execution_repo),
+            Arc::clone(&context_manager),
+            Arc::clone(&minio_service),
+            Arc::clone(&http_executor),
+            Arc::clone(&database_executor),
+            Arc::clone(&file_executor),
+            nats_client_for_status.clone(),
+        );
+
+        // Create NATS consumer with the handler
+        let consumer = NatsJobConsumer::new(nats_client, handler).await?;
 
         Ok(Self {
             consumer,
@@ -69,7 +84,7 @@ impl WorkerJobConsumer {
             retry_strategy: Arc::new(ExponentialBackoff::new()),
             circuit_breakers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             reference_resolver: Arc::new(ReferenceResolver::new()),
-            nats_client,
+            nats_client: nats_client_for_status,
         })
     }
 
@@ -77,7 +92,7 @@ impl WorkerJobConsumer {
     pub async fn start(&self) -> Result<(), QueueError> {
         info!("Starting worker job consumer");
 
-        // Start the consumer (handler is created internally)
+        // Start the consumer (handler is already configured)
         self.consumer.start().await
     }
 
@@ -87,19 +102,21 @@ impl WorkerJobConsumer {
         self.consumer.shutdown();
     }
 
-    /// Create the job handler closure
-    fn create_handler(&self) -> JobHandler {
-        let job_repo = Arc::clone(&self.job_repo);
-        let execution_repo = Arc::clone(&self.execution_repo);
-        let context_manager = Arc::clone(&self.context_manager);
-        let minio_service = Arc::clone(&self.minio_service);
-        let http_executor = Arc::clone(&self.http_executor);
-        let database_executor = Arc::clone(&self.database_executor);
-        let file_executor = Arc::clone(&self.file_executor);
-        let retry_strategy = Arc::clone(&self.retry_strategy);
-        let circuit_breakers = Arc::clone(&self.circuit_breakers);
-        let reference_resolver = Arc::clone(&self.reference_resolver);
-        let nats_client = self.nats_client.clone();
+    /// Create the job handler closure (static method for use in constructor)
+    fn create_handler_static(
+        job_repo: Arc<JobRepository>,
+        execution_repo: Arc<ExecutionRepository>,
+        context_manager: Arc<dyn ContextManager>,
+        minio_service: Arc<dyn MinIOService>,
+        http_executor: Arc<dyn JobExecutor>,
+        database_executor: Arc<dyn JobExecutor>,
+        file_executor: Arc<dyn JobExecutor>,
+        nats_client: Option<async_nats::Client>,
+    ) -> JobHandler {
+        let retry_strategy: Arc<dyn RetryStrategy> = Arc::new(ExponentialBackoff::new());
+        let circuit_breakers: Arc<tokio::sync::RwLock<HashMap<String, CircuitBreaker>>> =
+            Arc::new(tokio::sync::RwLock::new(HashMap::new()));
+        let reference_resolver = Arc::new(ReferenceResolver::new());
 
         Arc::new(move |job_message: JobMessage| {
             let job_repo = Arc::clone(&job_repo);
@@ -167,12 +184,29 @@ impl WorkerJobConsumer {
             .await
         {
             Ok(Some(existing_execution)) => {
-                info!(
-                    existing_execution_id = %existing_execution.id,
-                    status = ?existing_execution.status,
-                    "Job already executed with this idempotency key, skipping"
-                );
-                return Ok(());
+                // Only skip if execution is already completed (success/failed/timeout/dead_letter)
+                // If execution is pending or running, we should process it
+                match existing_execution.status {
+                    ExecutionStatus::Success
+                    | ExecutionStatus::Failed
+                    | ExecutionStatus::Timeout
+                    | ExecutionStatus::DeadLetter => {
+                        info!(
+                            existing_execution_id = %existing_execution.id,
+                            status = ?existing_execution.status,
+                            "Job already completed with this idempotency key, skipping"
+                        );
+                        return Ok(());
+                    }
+                    ExecutionStatus::Pending | ExecutionStatus::Running => {
+                        info!(
+                            existing_execution_id = %existing_execution.id,
+                            status = ?existing_execution.status,
+                            "Found existing execution in progress, will process it"
+                        );
+                        // Continue to process this execution
+                    }
+                }
             }
             Ok(None) => {
                 info!("No existing execution found, proceeding with job execution");

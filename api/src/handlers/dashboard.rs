@@ -122,12 +122,36 @@ pub async fn dashboard_index(
     );
     context.insert("stats", &stats);
 
-    // Get recent executions (using raw query for now)
-    let recent_executions: Vec<serde_json::Value> = vec![];
+    // Get recent executions
+    let execution_repo = common::db::repositories::ExecutionRepository::new(state.db_pool.clone());
+    let filter = common::db::repositories::ExecutionFilter {
+        job_id: None,
+        status: None,
+        trigger_source: None,
+        limit: Some(10),
+    };
+    let recent_executions = execution_repo
+        .find_with_filter(filter)
+        .await
+        .unwrap_or_default();
     context.insert("recent_executions", &recent_executions);
 
-    // Get active jobs (using raw query for now)
-    let active_jobs: Vec<serde_json::Value> = vec![];
+    // Get active jobs (enabled jobs)
+    let job_repo = common::db::repositories::JobRepository::new(state.db_pool.clone());
+    let all_jobs = job_repo.find_all().await.unwrap_or_default();
+    let active_jobs: Vec<serde_json::Value> = all_jobs
+        .iter()
+        .filter(|job| job.enabled)
+        .take(5)
+        .map(|job| {
+            serde_json::json!({
+                "id": job.id,
+                "name": job.name,
+                "description": job.description,
+                "enabled": job.enabled,
+            })
+        })
+        .collect();
     context.insert("active_jobs", &active_jobs);
 
     // If HTMX request, return only the content partial
@@ -146,17 +170,40 @@ pub async fn dashboard_index(
 }
 
 /// Jobs list partial (HTMX)
-#[tracing::instrument(skip(_state, headers))]
+#[tracing::instrument(skip(state, headers))]
 pub async fn jobs_partial(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Html<String>, ErrorResponse> {
     let mut context = Context::new();
     context.insert("active_page", "jobs");
 
-    // Fetch all jobs with their stats (using raw query for now)
-    let jobs: Vec<serde_json::Value> = vec![];
-    context.insert("jobs", &jobs);
+    // Fetch all jobs from database
+    let job_repo = common::db::repositories::JobRepository::new(state.db_pool.clone());
+    let jobs = job_repo
+        .find_all()
+        .await
+        .map_err(|e| ErrorResponse::new("database_error", &format!("Database error: {}", e)))?;
+
+    // Convert jobs to JSON for template
+    let jobs_json: Vec<serde_json::Value> = jobs
+        .iter()
+        .map(|job| {
+            serde_json::json!({
+                "id": job.id,
+                "name": job.name,
+                "description": job.description,
+                "enabled": job.enabled,
+                "timeout_seconds": job.timeout_seconds,
+                "max_retries": job.max_retries,
+                "allow_concurrent": job.allow_concurrent,
+                "created_at": job.created_at,
+                "updated_at": job.updated_at,
+            })
+        })
+        .collect();
+
+    context.insert("jobs", &jobs_json);
 
     // Check if this is an HTMX request
     let is_htmx = headers.get("HX-Request").is_some();

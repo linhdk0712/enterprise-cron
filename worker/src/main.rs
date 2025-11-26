@@ -12,7 +12,6 @@ use common::executor::file::FileProcessingExecutor;
 use common::executor::http::HttpExecutor;
 use common::executor::JobExecutor;
 use common::queue::nats::{NatsClient, NatsConfig};
-use common::queue::NatsJobConsumer;
 use common::storage::{MinIOService, MinIOServiceImpl, MinioClient};
 use common::worker::context::JobContextManager;
 use common::worker::WorkerJobConsumer;
@@ -104,49 +103,11 @@ async fn main() -> Result<()> {
     // Clone NATS client for status publishing before moving it
     let nats_client_for_status = nats_client.client().clone();
 
-    // Create job handler
-    let handler = {
-        let job_repo = Arc::clone(&job_repo);
-        let execution_repo = Arc::clone(&execution_repo);
-        let context_manager = Arc::clone(&context_manager);
-        let http_executor = Arc::clone(&http_executor);
-        let database_executor = Arc::clone(&database_executor);
-
-        Arc::new(move |job_message: common::queue::JobMessage| {
-            let _job_repo = Arc::clone(&job_repo);
-            let _execution_repo = Arc::clone(&execution_repo);
-            let _context_manager = Arc::clone(&context_manager);
-            let _http_executor = Arc::clone(&http_executor);
-            let _database_executor = Arc::clone(&database_executor);
-
-            Box::pin(async move {
-                // Process the job
-                info!(
-                    execution_id = %job_message.execution_id,
-                    job_id = %job_message.job_id,
-                    "Processing job message"
-                );
-
-                // For now, just log - full implementation will be in WorkerJobConsumer
-                Ok(())
-            }) as futures::future::BoxFuture<'static, Result<(), anyhow::Error>>
-        })
-    };
-
-    // Create NATS job consumer
-    let nats_consumer = NatsJobConsumer::new(nats_client, handler)
-        .await
-        .map_err(|e| {
-            error!(error = %e, "Failed to create NATS consumer");
-            anyhow::anyhow!("Consumer creation error: {}", e)
-        })?;
-
-    info!("NATS consumer created");
-
     // Create worker job consumer with MinIO service
     // Requirements: 13.4 - Worker supports multi-step jobs with MinIO integration
+    // WorkerJobConsumer will create NatsJobConsumer internally with proper handler
     let worker_consumer = WorkerJobConsumer::new(
-        nats_consumer,
+        nats_client,
         job_repo,
         execution_repo,
         context_manager,
