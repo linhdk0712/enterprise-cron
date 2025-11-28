@@ -1,0 +1,238 @@
+<div style="display: grid; gap: 1.5rem;">
+    <!-- Basic Information -->
+    <div>
+        <h3 style="margin-bottom: 0.75rem; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 0.5rem;">
+            Basic Information
+        </h3>
+        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 0.5rem; font-size: 0.95rem;">
+            <div style="font-weight: 600; color: #555;">Execution ID:</div>
+            <div><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">{{ execution.id }}</code>
+            </div>
+
+            <div style="font-weight: 600; color: #555;">Job Name:</div>
+            <div>
+                <a href="/dashboard/jobs/{{ execution.job_id }}" hx-get="/dashboard/jobs/{{ execution.job_id }}"
+                    hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true" onclick="closeExecutionDetails()"
+                    style="color: #3498db; text-decoration: none;">
+                    {{ execution.job_name }}
+                </a>
+            </div>
+
+            <div style="font-weight: 600; color: #555;">Status:</div>
+            <div>
+                {% if execution.status == "running" %}
+                <span class="badge badge-primary">Running</span>
+                {% elif execution.status == "success" %}
+                <span class="badge badge-success">Success</span>
+                {% elif execution.status == "failed" %}
+                <span class="badge badge-error">Failed</span>
+                {% elif execution.status == "pending" %}
+                <span class="badge badge-secondary">Pending</span>
+                {% elif execution.status == "cancelling" %}
+                <span class="badge badge-warning">Cancelling</span>
+                {% elif execution.status == "cancelled" %}
+                <span class="badge badge-error">Cancelled</span>
+                {% elif execution.status == "timeout" %}
+                <span class="badge badge-error">Timeout</span>
+                {% elif execution.status == "dead_letter" %}
+                <span class="badge badge-error">Dead Letter</span>
+                {% else %}
+                <span class="badge badge-secondary">{{ execution.status }}</span>
+                {% endif %}
+            </div>
+
+            <div style="font-weight: 600; color: #555;">Trigger Source:</div>
+            <div>
+                {% if execution.trigger_source == "scheduled" %}
+                <span class="badge badge-info">⏰ Scheduled</span>
+                {% elif execution.trigger_source == "manual" %}
+                <span class="badge badge-primary">👤 Manual</span>
+                {% elif execution.trigger_source == "webhook" %}
+                <span class="badge badge-warning">🔗 Webhook</span>
+                {% else %}
+                <span class="badge badge-secondary">{{ execution.trigger_source }}</span>
+                {% endif %}
+            </div>
+
+            <div style="font-weight: 600; color: #555;">Attempt:</div>
+            <div>
+                {% if execution.attempt > 1 %}
+                <span class="badge badge-warning">{{ execution.attempt }}</span>
+                {% else %}
+                {{ execution.attempt }}
+                {% endif %}
+            </div>
+
+            {% if execution.current_step %}
+            <div style="font-weight: 600; color: #555;">Current Step:</div>
+            <div>{{ execution.current_step }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Timing Information -->
+    <div>
+        <h3 style="margin-bottom: 0.75rem; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 0.5rem;">
+            Timing Information
+        </h3>
+        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 0.5rem; font-size: 0.95rem;">
+            <div style="font-weight: 600; color: #555;">Created At:</div>
+            <div>{{ execution.created_at }}</div>
+
+            {% if execution.started_at %}
+            <div style="font-weight: 600; color: #555;">Started At:</div>
+            <div>{{ execution.started_at }}</div>
+            {% endif %}
+
+            {% if execution.completed_at %}
+            <div style="font-weight: 600; color: #555;">Completed At:</div>
+            <div>{{ execution.completed_at }}</div>
+            {% endif %}
+
+            {% if execution.duration_seconds %}
+            <div style="font-weight: 600; color: #555;">Duration:</div>
+            <div>
+                {% if execution.duration_seconds < 60 %} {{ execution.duration_seconds }}s {% elif
+                    execution.duration_seconds < 3600 %} {{ (execution.duration_seconds / 60) | round }}m {{
+                    execution.duration_seconds % 60 }}s {% else %} {{ (execution.duration_seconds / 3600) | round }}h {{
+                    ((execution.duration_seconds % 3600) / 60) | round }}m {% endif %} </div>
+                    {% endif %}
+            </div>
+        </div>
+
+        <!-- Step Outputs Section (from MinIO JobContext) -->
+        {% if execution.step_outputs %}
+        <div>
+            <h3
+                style="margin-bottom: 0.75rem; color: #2c3e50; border-bottom: 2px solid #27ae60; padding-bottom: 0.5rem;">
+                📊 Step Execution Results
+            </h3>
+            {% for step in execution.step_outputs %}
+            <div style="margin-bottom: 1rem; border: 1px solid #dee2e6; border-radius: 4px; overflow: hidden;">
+                <!-- Step Header -->
+                <div
+                    style="background: #f8f9fa; padding: 0.75rem 1rem; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="color: #2c3e50;">Step: {{ step.step_id }}</strong>
+                        {% if step.status == "success" %}
+                        <span class="badge badge-success" style="margin-left: 0.5rem;">✓ Success</span>
+                        {% else %}
+                        <span class="badge badge-error" style="margin-left: 0.5rem;">✗ {{ step.status }}</span>
+                        {% endif %}
+                    </div>
+                    <div style="font-size: 0.85rem; color: #666;">
+                        Duration: {{ step.duration_seconds }}s
+                    </div>
+                </div>
+
+                <!-- Step Timing -->
+                <div
+                    style="background: #ffffff; padding: 0.5rem 1rem; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; color: #666;">
+                    <span>Started: {{ step.started_at }}</span>
+                    <span style="margin: 0 1rem;">→</span>
+                    <span>Completed: {{ step.completed_at }}</span>
+                </div>
+
+                <!-- Step Output -->
+                <div style="background: #f8f9fa; padding: 1rem; max-height: 300px; overflow-y: auto;">
+                    <pre
+                        style="margin: 0; white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', monospace; font-size: 0.85rem; line-height: 1.5;">{{ step.output }}</pre>
+                </div>
+
+                <!-- Copy Button -->
+                <div
+                    style="background: #ffffff; padding: 0.5rem 1rem; text-align: right; border-top: 1px solid #dee2e6;">
+                    <button class="btn btn-sm btn-secondary" onclick="copyStepOutput('{{ step.step_id }}')"
+                        style="font-size: 0.85rem;">
+                        📋 Copy Output
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% elif execution.result %}
+        <!-- Fallback: Show simple result if no step outputs available -->
+        <div>
+            <h3
+                style="margin-bottom: 0.75rem; color: #2c3e50; border-bottom: 2px solid #27ae60; padding-bottom: 0.5rem;">
+                📊 Execution Result
+            </h3>
+            <div
+                style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 1rem; max-height: 400px; overflow-y: auto;">
+                <pre
+                    style="margin: 0; white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', monospace; font-size: 0.85rem; line-height: 1.5;">{{ execution.result }}</pre>
+            </div>
+            <div style="margin-top: 0.5rem; text-align: right;">
+                <button class="btn btn-sm btn-secondary" onclick="copyToClipboard('result-content')"
+                    style="font-size: 0.85rem;">
+                    📋 Copy Result
+                </button>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Error Section -->
+        {% if execution.error %}
+        <div>
+            <h3
+                style="margin-bottom: 0.75rem; color: #2c3e50; border-bottom: 2px solid #e74c3c; padding-bottom: 0.5rem;">
+                ⚠️ Error Details
+            </h3>
+            <div style="background: #fff5f5; border: 1px solid #feb2b2; border-radius: 4px; padding: 1rem;">
+                <pre
+                    style="margin: 0; white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', monospace; font-size: 0.85rem; line-height: 1.5; color: #c53030;">{{ execution.error }}</pre>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Technical Details -->
+        <div>
+            <h3
+                style="margin-bottom: 0.75rem; color: #2c3e50; border-bottom: 2px solid #95a5a6; padding-bottom: 0.5rem;">
+                Technical Details
+            </h3>
+            <div style="display: grid; grid-template-columns: 150px 1fr; gap: 0.5rem; font-size: 0.85rem;">
+                <div style="font-weight: 600; color: #555;">Idempotency Key:</div>
+                <div><code
+                        style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 0.8rem;">{{ execution.idempotency_key }}</code>
+                </div>
+
+                <div style="font-weight: 600; color: #555;">Job ID:</div>
+                <div><code
+                        style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 0.8rem;">{{ execution.job_id }}</code>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function copyToClipboard(elementId) {
+            const resultText = document.querySelector('#execution-details-content pre').textContent;
+            navigator.clipboard.writeText(resultText).then(() => {
+                alert('Result copied to clipboard!');
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy result');
+            });
+        }
+
+        function copyStepOutput(stepId) {
+            // Find the step's output pre element
+            const stepElements = document.querySelectorAll('#execution-details-content pre');
+            for (let pre of stepElements) {
+                const stepDiv = pre.closest('div[style*="max-height: 300px"]');
+                if (stepDiv) {
+                    const stepHeader = stepDiv.parentElement.querySelector('strong');
+                    if (stepHeader && stepHeader.textContent.includes(stepId)) {
+                        navigator.clipboard.writeText(pre.textContent).then(() => {
+                            alert('Step output copied to clipboard!');
+                        }).catch(err => {
+                            console.error('Failed to copy:', err);
+                            alert('Failed to copy step output');
+                        });
+                        return;
+                    }
+                }
+            }
+        }
+    </script>

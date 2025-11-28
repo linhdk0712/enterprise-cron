@@ -8,6 +8,7 @@ mod handlers;
 mod middleware;
 mod routes;
 mod state;
+mod templates;
 
 use common::config::Settings;
 use common::db::DbPool;

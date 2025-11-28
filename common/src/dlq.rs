@@ -37,6 +37,7 @@ impl DeadLetterQueue {
             execution.status,
             ExecutionStatus::Failed | ExecutionStatus::Timeout
         ) && execution.attempt >= MAX_RETRIES as i32
+        // Note: Cancelled executions should NOT go to DLQ as they are user-initiated stops
     }
 
     /// Move a job execution to the Dead Letter Queue

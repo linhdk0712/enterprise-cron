@@ -53,6 +53,14 @@ pub struct MinioConfig {
     pub secret_key: String,
     pub bucket: String,
     pub region: String,
+    #[serde(default)]
+    pub use_ssl: bool,
+    #[serde(default = "default_verify_ssl")]
+    pub verify_ssl: bool,
+}
+
+fn default_verify_ssl() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -211,6 +219,8 @@ impl Default for Settings {
                 secret_key: "minioadmin".to_string(),
                 bucket: "vietnam-cron".to_string(),
                 region: "us-east-1".to_string(),
+                use_ssl: false,
+                verify_ssl: true,
             },
             auth: AuthConfig {
                 mode: AuthMode::Database,

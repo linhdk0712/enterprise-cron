@@ -293,6 +293,8 @@ pub enum ExecutionStatus {
     Failed,
     Timeout,
     DeadLetter,
+    Cancelling,
+    Cancelled,
 }
 
 impl std::fmt::Display for ExecutionStatus {
@@ -304,6 +306,8 @@ impl std::fmt::Display for ExecutionStatus {
             ExecutionStatus::Failed => write!(f, "failed"),
             ExecutionStatus::Timeout => write!(f, "timeout"),
             ExecutionStatus::DeadLetter => write!(f, "dead_letter"),
+            ExecutionStatus::Cancelling => write!(f, "cancelling"),
+            ExecutionStatus::Cancelled => write!(f, "cancelled"),
         }
     }
 }
@@ -319,6 +323,8 @@ impl FromStr for ExecutionStatus {
             "failed" => Ok(ExecutionStatus::Failed),
             "timeout" => Ok(ExecutionStatus::Timeout),
             "dead_letter" => Ok(ExecutionStatus::DeadLetter),
+            "cancelling" => Ok(ExecutionStatus::Cancelling),
+            "cancelled" => Ok(ExecutionStatus::Cancelled),
             _ => Err(format!("Invalid execution status: {}", s)),
         }
     }

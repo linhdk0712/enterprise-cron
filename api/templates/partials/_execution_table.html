@@ -17,7 +17,8 @@
         <tr>
             <td>
                 <a href="/dashboard/jobs/{{ execution.job_id }}" hx-get="/dashboard/jobs/{{ execution.job_id }}"
-                    hx-target="#main-content" hx-push-url="true" style="color: #3498db; text-decoration: none;">
+                    hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+                    style="color: #3498db; text-decoration: none;">
                     {{ execution.job_name | default(value="Unknown") }}
                 </a>
             </td>

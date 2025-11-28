@@ -23,40 +23,36 @@ impl MinioClient {
     pub async fn new(config: &MinioConfig) -> Result<Self, StorageError> {
         info!("Initializing MinIO client");
 
-        // Parse endpoint - strip scheme as rust-s3 Region::Custom doesn't expect it
-        let endpoint = config
+        // Strip http:// or https:// from endpoint
+        let endpoint_clean = config
             .endpoint
             .trim_start_matches("http://")
-            .trim_start_matches("https://")
-            .to_string();
+            .trim_start_matches("https://");
 
         // Create credentials
-        let credentials = Credentials::new(
+        let creds = Credentials::new(
             Some(&config.access_key),
             Some(&config.secret_key),
             None,
             None,
             None,
         )
-        .map_err(|e| {
-            error!(error = %e, "Failed to create MinIO credentials");
-            StorageError::MinioError(format!("Failed to create credentials: {}", e))
-        })?;
+        .map_err(|e| StorageError::MinioError(format!("Credentials error: {}", e)))?;
 
-        // Create custom region for MinIO (endpoint without scheme)
+        // Create region
         let region = Region::Custom {
             region: config.region.clone(),
-            endpoint,
+            endpoint: endpoint_clean.to_string(),
         };
 
-        // Create bucket instance with path style
-        // Note: For production, MinIO should be configured with HTTPS
-        let bucket = Bucket::new(&config.bucket, region, credentials)
-            .map_err(|e| {
-                error!(error = %e, "Failed to create MinIO bucket");
-                StorageError::MinioError(format!("Failed to create bucket: {}", e))
-            })?
+        // Create bucket
+        let bucket = Bucket::new(&config.bucket, region, creds)
+            .map_err(|e| StorageError::MinioError(format!("Bucket error: {}", e)))?
             .with_path_style();
+
+        // Note: Bucket must be created manually via MinIO Console or mc command
+        // docker exec vietnam-cron-minio mc mb local/vietnam-cron
+        debug!("MinIO bucket configured (assuming bucket exists)");
 
         info!(
             bucket = %config.bucket,

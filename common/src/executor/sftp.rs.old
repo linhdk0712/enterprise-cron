@@ -920,6 +920,9 @@ mod tests {
                 auth: None,
             },
             condition: None,
+            on_failure: None,
+            timeout_seconds: None,
+            retry_count: None,
         };
 
         let mut context = JobContext::new(Uuid::new_v4(), Uuid::new_v4());

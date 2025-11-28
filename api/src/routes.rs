@@ -26,7 +26,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/info", get(handlers::index::index))
         .route("/health", get(handlers::health::health_check))
         .route("/api/auth/login", post(handlers::auth::login))
-        .route("/api/auth/login/form", post(handlers::login::login_form_submit))
+        .route(
+            "/api/auth/login/form",
+            post(handlers::login::login_form_submit),
+        )
         .route("/auth/set-token", get(handlers::login::set_token_page))
         .route("/api/auth/refresh", post(handlers::auth::refresh_token));
 
@@ -50,6 +53,10 @@ pub fn create_router(state: AppState) -> Router {
             "/api/executions/:id",
             get(handlers::executions::get_execution),
         )
+        .route(
+            "/api/executions/:id/stop",
+            post(handlers::executions::stop_execution),
+        )
         // Variable management endpoints
         .route("/api/variables", post(handlers::variables::create_variable))
         .route("/api/variables", get(handlers::variables::list_variables))
@@ -69,7 +76,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/users/:id", put(handlers::users::update_user))
         .route("/api/users/:id", delete(handlers::users::delete_user))
         .route("/api/users/:id/roles", put(handlers::users::assign_roles))
-        .route("/api/users/:id/password", put(handlers::users::update_password))
+        .route(
+            "/api/users/:id/password",
+            put(handlers::users::update_password),
+        )
         .route("/api/roles", get(handlers::users::list_roles))
         // Webhook endpoints
         .route(
@@ -105,6 +115,10 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/dashboard/jobs/:id",
             get(handlers::dashboard::job_details_partial),
+        )
+        .route(
+            "/dashboard/jobs/:id/modal",
+            get(handlers::dashboard::job_details_modal),
         )
         .route(
             "/dashboard/executions",

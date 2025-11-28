@@ -8,15 +8,14 @@
             "id": "step-1",
             "name": "Fetch Weather",
             "type": {
-                "HttpRequest": {
-                    "url": "https://api.open-meteo.com/v1/forecast?latitude=21.0285&longitude=105.8542&current_weather=true",
-                    "method": "GET",
-                    "headers": {
-                        "Accept": "application/json"
-                    },
-                    "body": null,
-                    "auth": null
-                }
+                "type": "http_request",
+                "method": "GET",
+                "url": "https://api.open-meteo.com/v1/forecast?latitude=21.0285&longitude=105.8542&current_weather=true",
+                "headers": {
+                    "Accept": "application/json"
+                },
+                "body": null,
+                "auth": null
             },
             "condition": null,
             "on_failure": "stop",

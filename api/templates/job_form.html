@@ -3,12 +3,6 @@
 {% block title %}Create Job - Vietnam Enterprise Cron{% endblock %}
 
 {% block extra_styles %}
-<script>
-    console.log('=== JOB FORM DEBUG ===');
-    console.log('Job form page loaded');
-    console.log('Current URL:', window.location.href);
-    console.log('=====================');
-</script>
 <style>
     .wizard {
         display: flex;
@@ -16,11 +10,14 @@
         gap: 2rem;
     }
 
+    /* Improved wizard steps with better mobile support */
     .wizard-steps {
         display: flex;
         justify-content: space-between;
         margin-bottom: 2rem;
         position: relative;
+        overflow-x: auto;
+        padding: 0.5rem 0;
     }
 
     .wizard-steps::before {
@@ -36,9 +33,16 @@
 
     .wizard-step {
         flex: 1;
+        min-width: 100px;
         text-align: center;
         position: relative;
         z-index: 1;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .wizard-step:hover .wizard-step-circle {
+        transform: scale(1.1);
     }
 
     .wizard-step-circle {
@@ -53,11 +57,13 @@
         margin: 0 auto 0.5rem;
         font-weight: 600;
         transition: all 0.3s;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
     .wizard-step.active .wizard-step-circle {
         background: #3498db;
         color: white;
+        box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
     }
 
     .wizard-step.completed .wizard-step-circle {
@@ -65,9 +71,15 @@
         color: white;
     }
 
+    .wizard-step.completed .wizard-step-circle::after {
+        content: '✓';
+        position: absolute;
+    }
+
     .wizard-step-label {
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         color: #7f8c8d;
+        white-space: nowrap;
     }
 
     .wizard-step.active .wizard-step-label {
@@ -77,10 +89,23 @@
 
     .wizard-content {
         display: none;
+        animation: fadeIn 0.3s;
     }
 
     .wizard-content.active {
         display: block;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 
     .wizard-actions {
@@ -89,8 +114,10 @@
         margin-top: 2rem;
         padding-top: 2rem;
         border-top: 2px solid #ecf0f1;
+        gap: 1rem;
     }
 
+    /* Improved form layout */
     .form-row {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -98,48 +125,257 @@
         margin-bottom: 1rem;
     }
 
-    .step-item {
+    /* Quick templates section */
+    .quick-templates {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+
+    .quick-templates h4 {
+        margin: 0 0 1rem 0;
+        font-size: 1.1rem;
+    }
+
+    .template-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .template-card {
+        background: rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(10px);
+        padding: 1rem;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.3s;
+        border: 2px solid transparent;
+    }
+
+    .template-card:hover {
+        background: rgba(255, 255, 255, 0.25);
+        border-color: rgba(255, 255, 255, 0.5);
+        transform: translateY(-2px);
+    }
+
+    .template-card-icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .template-card-title {
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+
+    .template-card-desc {
+        font-size: 0.85rem;
+        opacity: 0.9;
+    }
+
+    /* Collapsible sections */
+    .collapsible-section {
+        border: 1px solid #ecf0f1;
+        border-radius: 6px;
+        margin-bottom: 1rem;
+        overflow: hidden;
+    }
+
+    .collapsible-header {
         background: #f8f9fa;
         padding: 1rem;
-        border-radius: 4px;
-        border-left: 4px solid #3498db;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: background 0.3s;
+    }
+
+    .collapsible-header:hover {
+        background: #e9ecef;
+    }
+
+    .collapsible-header-title {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+    }
+
+    .collapsible-icon {
+        transition: transform 0.3s;
+    }
+
+    .collapsible-section.open .collapsible-icon {
+        transform: rotate(180deg);
+    }
+
+    .collapsible-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease-out;
+    }
+
+    .collapsible-section.open .collapsible-content {
+        max-height: 2000px;
+        transition: max-height 0.5s ease-in;
+    }
+
+    .collapsible-body {
+        padding: 1rem;
+    }
+
+    /* Improved step items */
+    .step-item {
+        background: #ffffff;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border: 2px solid #e9ecef;
         margin-bottom: 1rem;
+        transition: all 0.3s;
+    }
+
+    .step-item:hover {
+        border-color: #3498db;
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.15);
     }
 
     .step-item-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.5rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #f8f9fa;
     }
 
+    .step-item-header strong {
+        font-size: 1.1rem;
+        color: #2c3e50;
+    }
+
+    /* Improved JSON preview */
     .json-preview {
         background: #2c3e50;
         color: #ecf0f1;
-        padding: 1rem;
-        border-radius: 4px;
-        font-family: 'Courier New', monospace;
+        padding: 1.5rem;
+        border-radius: 8px;
+        font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
         font-size: 0.85rem;
         max-height: 500px;
         overflow-y: auto;
+        box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
     }
 
+    /* Better error messages */
     .error-message {
         color: #e74c3c;
         font-size: 0.9rem;
-        margin-top: 0.25rem;
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        background: #fee;
+        border-left: 3px solid #e74c3c;
+        border-radius: 4px;
     }
 
-    .r adio-group {
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
+    /* Radio group improvements */
+    .radio-group {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 0.75rem;
     }
 
     .radio-option {
+        background: #f8f9fa;
+        padding: 0.75rem;
+        border-radius: 6px;
+        border: 2px solid #e9ecef;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .radio-option:hover {
+        border-color: #3498db;
+        background: #e3f2fd;
+    }
+
+    .radio-option input[type="radio"]:checked+label {
+        font-weight: 600;
+        color: #3498db;
+    }
+
+    .radio-option input[type="radio"] {
+        margin-right: 0.5rem;
+    }
+
+    /* Help text styling */
+    .help-text {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 0.5rem;
+        padding: 0.75rem;
+        background: #e8f4f8;
+        border-left: 3px solid #3498db;
+        border-radius: 4px;
+        margin: 1rem 0;
+        font-size: 0.9rem;
+        color: #2c3e50;
+    }
+
+    .help-text-icon {
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+
+    /* Tooltips */
+    .tooltip-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        cursor: help;
+    }
+
+    .tooltip-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #3498db;
+        color: white;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+
+    /* Summary cards */
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .summary-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.25rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .summary-card-label {
+        font-size: 0.85rem;
+        opacity: 0.9;
+        margin-bottom: 0.5rem;
+    }
+
+    .summary-card-value {
+        font-size: 1.5rem;
+        font-weight: 600;
     }
 
     .hidden {
@@ -156,18 +392,71 @@
         cursor: not-allowed;
     }
 
+    /* Mobile optimizations */
     @media (max-width: 768px) {
         .wizard-steps {
-            flex-direction: column;
-            gap: 1rem;
+            justify-content: flex-start;
+            gap: 0.5rem;
         }
 
-        .wizard-steps::before {
-            display: none;
+        .wizard-step {
+            min-width: 80px;
+        }
+
+        .wizard-step-label {
+            font-size: 0.75rem;
         }
 
         .form-row {
             grid-template-columns: 1fr;
+        }
+
+        .template-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .radio-group {
+            grid-template-columns: 1fr;
+        }
+
+        .summary-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .wizard-actions {
+            flex-direction: column;
+        }
+
+        .wizard-actions button {
+            width: 100%;
+        }
+    }
+
+    /* Loading state */
+    .btn-loading {
+        position: relative;
+        pointer-events: none;
+        opacity: 0.7;
+    }
+
+    .btn-loading::after {
+        content: '';
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        top: 50%;
+        left: 50%;
+        margin-left: -8px;
+        margin-top: -8px;
+        border: 2px solid #ffffff;
+        border-radius: 50%;
+        border-top-color: transparent;
+        animation: spinner 0.6s linear infinite;
+    }
+
+    @keyframes spinner {
+        to {
+            transform: rotate(360deg);
         }
     }
 </style>
@@ -176,32 +465,59 @@
 {% block content %}
 <div class="card">
     <div class="card-header">
-        <h2>Create New Job</h2>
+        <h2>🚀 Create New Job</h2>
         <button class="btn btn-secondary" onclick="window.history.back()">
             ← Back
         </button>
     </div>
 
     <form id="job-form" class="wizard">
+        <!-- Quick Templates -->
+        <div class="quick-templates">
+            <h4>⚡ Quick Start Templates</h4>
+            <div class="template-grid">
+                <div class="template-card" onclick="applyTemplate('api_call')">
+                    <div class="template-card-icon">🌐</div>
+                    <div class="template-card-title">API Call</div>
+                    <div class="template-card-desc">Call external REST API</div>
+                </div>
+                <div class="template-card" onclick="applyTemplate('database')">
+                    <div class="template-card-icon">🗄️</div>
+                    <div class="template-card-title">Database Query</div>
+                    <div class="template-card-desc">Run SQL queries</div>
+                </div>
+                <div class="template-card" onclick="applyTemplate('file_processing')">
+                    <div class="template-card-icon">📊</div>
+                    <div class="template-card-title">File Processing</div>
+                    <div class="template-card-desc">Process Excel/CSV files</div>
+                </div>
+                <div class="template-card" onclick="applyTemplate('sftp')">
+                    <div class="template-card-icon">📁</div>
+                    <div class="template-card-title">SFTP Transfer</div>
+                    <div class="template-card-desc">Upload/download files</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Wizard Steps -->
         <div class="wizard-steps">
-            <div class="wizard-step active" data-step="1">
+            <div class="wizard-step active" data-step="1" onclick="goToStep(1)">
                 <div class="wizard-step-circle">1</div>
                 <div class="wizard-step-label">Basic Info</div>
             </div>
-            <div class="wizard-step" data-step="2">
+            <div class="wizard-step" data-step="2" onclick="goToStep(2)">
                 <div class="wizard-step-circle">2</div>
                 <div class="wizard-step-label">Schedule</div>
             </div>
-            <div class="wizard-step" data-step="3">
+            <div class="wizard-step" data-step="3" onclick="goToStep(3)">
                 <div class="wizard-step-circle">3</div>
                 <div class="wizard-step-label">Job Steps</div>
             </div>
-            <div class="wizard-step" data-step="4">
+            <div class="wizard-step" data-step="4" onclick="goToStep(4)">
                 <div class="wizard-step-circle">4</div>
                 <div class="wizard-step-label">Triggers</div>
             </div>
-            <div class="wizard-step" data-step="5">
+            <div class="wizard-step" data-step="5" onclick="goToStep(5)">
                 <div class="wizard-step-circle">5</div>
                 <div class="wizard-step-label">Review</div>
             </div>
@@ -209,65 +525,130 @@
 
         <!-- Step 1: Basic Info -->
         <div class="wizard-content active" data-step="1">
-            <h3>Basic Information</h3>
-            <div class="form-group">
-                <label for="job-name">Job Name *</label>
-                <input type="text" id="job-name" name="name" required placeholder="e.g., Daily Sales Report">
-                <span class="error-message" id="error-name"></span>
+            <h3>📝 Basic Information</h3>
+            <div class="help-text">
+                <span class="help-text-icon">💡</span>
+                <div>Start by giving your job a descriptive name and configure basic settings. These can be changed
+                    later.</div>
             </div>
+
+            <div class="form-group">
+                <label for="job-name">
+                    Job Name *
+                    <span class="tooltip-trigger">
+                        <span class="tooltip-icon">?</span>
+                    </span>
+                </label>
+                <input type="text" id="job-name" name="name" required placeholder="e.g., Daily Sales Report">
+                <small style="color: #7f8c8d;">Choose a clear, descriptive name that explains what this job does</small>
+                <span class="error-message hidden" id="error-name"></span>
+            </div>
+
             <div class="form-group">
                 <label for="job-description">Description</label>
                 <textarea id="job-description" name="description" rows="3"
-                    placeholder="Describe what this job does"></textarea>
+                    placeholder="Describe what this job does, when it runs, and any important details..."></textarea>
             </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="timeout-seconds">Timeout (seconds) *</label>
-                    <input type="number" id="timeout-seconds" name="timeout_seconds" value="300" min="1" required>
+
+            <!-- Advanced Settings (Collapsible) -->
+            <div class="collapsible-section open">
+                <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                    <div class="collapsible-header-title">
+                        <span>⚙️</span>
+                        <span>Advanced Settings</span>
+                    </div>
+                    <span class="collapsible-icon">▼</span>
                 </div>
-                <div class="form-group">
-                    <label for="max-retries">Max Retries *</label>
-                    <input type="number" id="max-retries" name="max_retries" value="10" min="0" max="10" required>
+                <div class="collapsible-content">
+                    <div class="collapsible-body">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="timeout-seconds">
+                                    Timeout (seconds) *
+                                    <span class="tooltip-trigger">
+                                        <span class="tooltip-icon">?</span>
+                                    </span>
+                                </label>
+                                <input type="number" id="timeout-seconds" name="timeout_seconds" value="300" min="1"
+                                    required>
+                                <small style="color: #7f8c8d;">Maximum time allowed for job execution (default: 300s = 5
+                                    minutes)</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="max-retries">
+                                    Max Retries *
+                                    <span class="tooltip-trigger">
+                                        <span class="tooltip-icon">?</span>
+                                    </span>
+                                </label>
+                                <input type="number" id="max-retries" name="max_retries" value="3" min="0" max="10"
+                                    required>
+                                <small style="color: #7f8c8d;">Number of retry attempts on failure (0-10, recommended:
+                                    3)</small>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="allow-concurrent" name="allow_concurrent">
+                                <strong>Allow concurrent executions</strong>
+                            </label>
+                            <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
+                                ⚠️ Enable only if multiple instances can run safely at the same time
+                            </small>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="allow-concurrent" name="allow_concurrent">
-                    Allow concurrent executions
-                </label>
             </div>
         </div>
 
         <!-- Step 2: Schedule -->
         <div class="wizard-content" data-step="2">
-            <h3>Schedule Configuration</h3>
+            <h3>⏰ Schedule Configuration</h3>
+            <div class="help-text">
+                <span class="help-text-icon">💡</span>
+                <div>Choose how and when this job should run automatically. You can always trigger it manually
+                    regardless of the schedule.</div>
+            </div>
+
             <div class="form-group">
-                <label>Schedule Type *</label>
+                <label><strong>Schedule Type *</strong></label>
                 <div class="radio-group">
-                    <div class="radio-option">
+                    <label class="radio-option">
                         <input type="radio" id="schedule-none" name="schedule_type" value="none" checked>
-                        <label for="schedule-none">Manual Only (trigger via dashboard or API)</label>
-                    </div>
-                    <div class="radio-option">
+                        <div>
+                            <div><strong>🎯 Manual Only</strong></div>
+                            <small>Trigger via dashboard or API</small>
+                        </div>
+                    </label>
+                    <label class="radio-option">
                         <input type="radio" id="schedule-cron" name="schedule_type" value="cron">
-                        <label for="schedule-cron">Cron Expression</label>
-                    </div>
-                    <div class="radio-option">
+                        <div>
+                            <div><strong>📅 Cron Expression</strong></div>
+                            <small>Complex schedules (e.g., daily at 2 AM)</small>
+                        </div>
+                    </label>
+                    <label class="radio-option">
                         <input type="radio" id="schedule-fixed-delay" name="schedule_type" value="fixed_delay">
-                        <label for="schedule-fixed-delay">Fixed Delay</label>
-                    </div>
-                    <div class="radio-option">
+                        <div>
+                            <div><strong>⏱️ Fixed Delay</strong></div>
+                            <small>Wait X seconds after completion</small>
+                        </div>
+                    </label>
+                    <label class="radio-option">
                         <input type="radio" id="schedule-fixed-rate" name="schedule_type" value="fixed_rate">
-                        <label for="schedule-fixed-rate">Fixed Rate</label>
-                    </div>
-                    <div class="radio-option">
+                        <div>
+                            <div><strong>🔄 Fixed Rate</strong></div>
+                            <small>Run every X seconds</small>
+                        </div>
+                    </label>
+                    <label class="radio-option">
                         <input type="radio" id="schedule-one-time" name="schedule_type" value="one_time">
-                        <label for="schedule-one-time">One Time</label>
-                    </div>
+                        <div>
+                            <div><strong>🎯 One Time</strong></div>
+                            <small>Run once at specific time</small>
+                        </div>
+                    </label>
                 </div>
-                <small style="color: #7f8c8d; display: block; margin-top: 0.5rem;">
-                    💡 Tip: Choose "Manual Only" if you want to trigger the job on-demand without automatic scheduling.
-                </small>
             </div>
 
             <!-- Cron Schedule -->
@@ -318,65 +699,114 @@
 
         <!-- Step 3: Job Steps -->
         <div class="wizard-content" data-step="3">
-            <h3>Job Steps</h3>
-            <p style="color: #7f8c8d; margin-bottom: 1rem;">
-                Define the steps that will be executed sequentially. Each step can perform different operations.
-            </p>
+            <h3>🔧 Job Steps</h3>
+            <div class="help-text">
+                <span class="help-text-icon">💡</span>
+                <div>Define the steps that will be executed sequentially. Each step can perform different operations
+                    like API calls, database queries, or file processing.</div>
+            </div>
+
             <div id="steps-container"></div>
-            <button type="button" class="btn btn-primary" onclick="addStep()">
-                + Add Another Step
+
+            <button type="button" class="btn btn-primary" onclick="addStep()" style="width: 100%; margin-top: 1rem;">
+                ➕ Add Step
             </button>
-            <div id="steps-validation-error" class="error-message" style="margin-top: 1rem;"></div>
+            <div id="steps-validation-error" class="error-message hidden" style="margin-top: 1rem;"></div>
         </div>
 
         <!-- Step 4: Triggers -->
         <div class="wizard-content" data-step="4">
-            <h3>Trigger Configuration</h3>
-            <p style="color: #7f8c8d; margin-bottom: 1rem;">
-                Configure how this job can be triggered. You can enable multiple trigger types.
-            </p>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="trigger-scheduled" name="trigger_scheduled" checked>
-                    <strong>Scheduled Trigger</strong> - Automatically run based on schedule configuration
-                </label>
-                <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
-                    Only works if you configured a schedule (Cron, Fixed Delay, Fixed Rate, or One Time)
-                </small>
+            <h3>🎯 Trigger Configuration</h3>
+            <div class="help-text">
+                <span class="help-text-icon">💡</span>
+                <div>Configure how this job can be triggered. You can enable multiple trigger types for maximum
+                    flexibility.</div>
             </div>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="trigger-manual" name="trigger_manual" checked>
-                    <strong>Manual Trigger</strong> - Trigger on-demand via dashboard or API
-                </label>
-                <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
-                    ✅ Recommended for manual jobs - allows you to click "Trigger" button in the dashboard
-                </small>
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="trigger-webhook" name="trigger_webhook">
-                    <strong>Webhook Trigger</strong> - Trigger via HTTP webhook endpoint
-                </label>
-                <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
-                    Allows external systems to trigger this job via authenticated webhook
-                </small>
-            </div>
-            <div id="webhook-config" class="hidden">
-                <div class="form-group">
-                    <label for="webhook-secret">Webhook Secret Key *</label>
-                    <input type="text" id="webhook-secret"
-                        placeholder="Enter a secret key for HMAC signature validation">
-                    <small style="color: #7f8c8d;">Used for HMAC-SHA256 signature validation</small>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="webhook-rate-limit-max">Rate Limit - Max Requests</label>
-                        <input type="number" id="webhook-rate-limit-max" min="1" placeholder="100">
+
+            <div class="collapsible-section open">
+                <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                    <div class="collapsible-header-title">
+                        <span>⏰</span>
+                        <span>Scheduled Trigger</span>
                     </div>
-                    <div class="form-group">
-                        <label for="webhook-rate-limit-window">Rate Limit - Window (seconds)</label>
-                        <input type="number" id="webhook-rate-limit-window" min="1" placeholder="60">
+                    <span class="collapsible-icon">▼</span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="collapsible-body">
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="trigger-scheduled" name="trigger_scheduled" checked>
+                                <strong>Enable Scheduled Trigger</strong>
+                            </label>
+                            <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
+                                Automatically run based on schedule configuration (Step 2). Only works if you configured
+                                a schedule.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapsible-section open">
+                <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                    <div class="collapsible-header-title">
+                        <span>👆</span>
+                        <span>Manual Trigger</span>
+                    </div>
+                    <span class="collapsible-icon">▼</span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="collapsible-body">
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="trigger-manual" name="trigger_manual" checked>
+                                <strong>Enable Manual Trigger</strong>
+                            </label>
+                            <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
+                                ✅ Recommended - Allows you to trigger the job on-demand via dashboard or API
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapsible-section">
+                <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                    <div class="collapsible-header-title">
+                        <span>🔗</span>
+                        <span>Webhook Trigger</span>
+                    </div>
+                    <span class="collapsible-icon">▼</span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="collapsible-body">
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="trigger-webhook" name="trigger_webhook">
+                                <strong>Enable Webhook Trigger</strong>
+                            </label>
+                            <small style="color: #7f8c8d; display: block; margin-left: 1.5rem;">
+                                Allows external systems to trigger this job via authenticated HTTP webhook
+                            </small>
+                        </div>
+                        <div id="webhook-config" class="hidden" style="margin-top: 1rem;">
+                            <div class="form-group">
+                                <label for="webhook-secret">Webhook Secret Key *</label>
+                                <input type="text" id="webhook-secret"
+                                    placeholder="Enter a secret key for HMAC signature validation">
+                                <small style="color: #7f8c8d;">Used for HMAC-SHA256 signature validation</small>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="webhook-rate-limit-max">Rate Limit - Max Requests</label>
+                                    <input type="number" id="webhook-rate-limit-max" min="1" placeholder="100">
+                                </div>
+                                <div class="form-group">
+                                    <label for="webhook-rate-limit-window">Rate Limit - Window (seconds)</label>
+                                    <input type="number" id="webhook-rate-limit-window" min="1" placeholder="60">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -384,14 +814,35 @@
 
         <!-- Step 5: Review -->
         <div class="wizard-content" data-step="5">
-            <h3>Review & Submit</h3>
-            <div id="job-summary" style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+            <h3>✅ Review & Submit</h3>
+            <div class="help-text">
+                <span class="help-text-icon">💡</span>
+                <div>Review your job configuration before creating it. You can go back to any step to make changes.
+                </div>
+            </div>
+
+            <div id="job-summary" class="summary-grid">
                 <!-- Will be populated by JavaScript -->
             </div>
-            <p style="color: #7f8c8d; margin-bottom: 1rem;">
-                Review the generated JSON job definition before submitting.
-            </p>
-            <div class="json-preview" id="json-preview"></div>
+
+            <div class="collapsible-section open">
+                <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                    <div class="collapsible-header-title">
+                        <span>📄</span>
+                        <span>JSON Configuration</span>
+                    </div>
+                    <span class="collapsible-icon">▼</span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="collapsible-body">
+                        <p style="color: #7f8c8d; margin-bottom: 1rem;">
+                            This is the JSON that will be sent to the server. You can copy this for backup or API usage.
+                        </p>
+                        <div class="json-preview" id="json-preview"></div>
+                    </div>
+                </div>
+            </div>
+
             <div id="validation-errors" class="alert alert-error hidden" style="margin-top: 1rem;"></div>
         </div>
 
@@ -401,12 +852,12 @@
                 style="display: none;">
                 ← Previous
             </button>
-            <div></div>
+            <div style="flex: 1;"></div>
             <button type="button" class="btn btn-primary" id="btn-next" onclick="nextStep()">
                 Next →
             </button>
             <button type="submit" class="btn btn-success" id="btn-submit" style="display: none;">
-                Create Job
+                ✓ Create Job
             </button>
         </div>
     </form>
@@ -435,6 +886,99 @@
         // Auto-add first step for better UX
         addStep();
     });
+
+    // Template functions
+    function applyTemplate(templateType) {
+        // Clear existing steps
+        steps = [];
+        document.getElementById('steps-container').innerHTML = '';
+
+        // Apply template based on type
+        if (templateType === 'api_call') {
+            document.getElementById('job-name').value = 'API Call Job';
+            document.getElementById('job-description').value = 'Call external REST API endpoint';
+            addStep();
+            setTimeout(() => {
+                const stepEl = document.getElementById('step-1');
+                stepEl.querySelector('.step-name').value = 'Call API';
+                stepEl.querySelector('.step-type').value = 'http_request';
+                handleStepTypeChange('step-1', 'http_request');
+            }, 100);
+        } else if (templateType === 'database') {
+            document.getElementById('job-name').value = 'Database Query Job';
+            document.getElementById('job-description').value = 'Execute SQL query on database';
+            addStep();
+            setTimeout(() => {
+                const stepEl = document.getElementById('step-1');
+                stepEl.querySelector('.step-name').value = 'Run Query';
+                stepEl.querySelector('.step-type').value = 'database_query';
+                handleStepTypeChange('step-1', 'database_query');
+            }, 100);
+        } else if (templateType === 'file_processing') {
+            document.getElementById('job-name').value = 'File Processing Job';
+            document.getElementById('job-description').value = 'Process Excel or CSV files';
+            addStep();
+            setTimeout(() => {
+                const stepEl = document.getElementById('step-1');
+                stepEl.querySelector('.step-name').value = 'Process File';
+                stepEl.querySelector('.step-type').value = 'file_processing';
+                handleStepTypeChange('step-1', 'file_processing');
+            }, 100);
+        } else if (templateType === 'sftp') {
+            document.getElementById('job-name').value = 'SFTP Transfer Job';
+            document.getElementById('job-description').value = 'Upload or download files via SFTP';
+            addStep();
+            setTimeout(() => {
+                const stepEl = document.getElementById('step-1');
+                stepEl.querySelector('.step-name').value = 'Transfer File';
+                stepEl.querySelector('.step-type').value = 'sftp';
+                handleStepTypeChange('step-1', 'sftp');
+            }, 100);
+        }
+
+        // Show notification
+        showNotification('Template applied! Review and customize the settings.', 'success');
+    }
+
+    // Collapsible section toggle
+    function toggleCollapsible(header) {
+        const section = header.parentElement;
+        section.classList.toggle('open');
+    }
+
+    // Go to specific step (for clickable wizard steps)
+    function goToStep(targetStep) {
+        if (targetStep < currentStep) {
+            // Allow going back
+            while (currentStep > targetStep) {
+                previousStep();
+            }
+        }
+    }
+
+    // Show notification
+    function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            background: ${type === 'success' ? '#27ae60' : type === 'error' ? '#e74c3c' : '#3498db'};
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 10000;
+            animation: slideIn 0.3s;
+        `;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
 
     function handleScheduleTypeChange(e) {
         // Hide all schedule configs
@@ -519,12 +1063,18 @@
 
     function validateCurrentStep() {
         // Clear previous errors
-        document.querySelectorAll('.error-message').forEach(el => el.textContent = '');
+        document.querySelectorAll('.error-message').forEach(el => {
+            el.textContent = '';
+            el.classList.add('hidden');
+        });
 
         if (currentStep === 1) {
             const name = document.getElementById('job-name').value.trim();
             if (!name) {
-                document.getElementById('error-name').textContent = 'Job name is required';
+                const errorEl = document.getElementById('error-name');
+                errorEl.textContent = '⚠️ Job name is required';
+                errorEl.classList.remove('hidden');
+                document.getElementById('job-name').focus();
                 return false;
             }
         } else if (currentStep === 2) {
@@ -532,32 +1082,39 @@
             if (scheduleType === 'cron') {
                 const expression = document.getElementById('cron-expression').value.trim();
                 if (!expression) {
-                    document.getElementById('error-cron-expression').textContent = 'Cron expression is required';
+                    const errorEl = document.getElementById('error-cron-expression');
+                    errorEl.textContent = '⚠️ Cron expression is required';
+                    errorEl.classList.remove('hidden');
+                    document.getElementById('cron-expression').focus();
                     return false;
                 }
             } else if (scheduleType === 'fixed_delay') {
                 const delay = document.getElementById('delay-seconds').value;
                 if (!delay || delay < 1) {
-                    alert('Delay seconds must be at least 1');
+                    showNotification('Delay seconds must be at least 1', 'error');
+                    document.getElementById('delay-seconds').focus();
                     return false;
                 }
             } else if (scheduleType === 'fixed_rate') {
                 const interval = document.getElementById('interval-seconds').value;
                 if (!interval || interval < 1) {
-                    alert('Interval seconds must be at least 1');
+                    showNotification('Interval seconds must be at least 1', 'error');
+                    document.getElementById('interval-seconds').focus();
                     return false;
                 }
             } else if (scheduleType === 'one_time') {
                 const executeAt = document.getElementById('execute-at').value;
                 if (!executeAt) {
-                    alert('Execute at time is required');
+                    showNotification('Execute at time is required', 'error');
+                    document.getElementById('execute-at').focus();
                     return false;
                 }
             }
         } else if (currentStep === 3) {
             const stepsError = document.getElementById('steps-validation-error');
             if (steps.length === 0) {
-                stepsError.textContent = '⚠️ At least one job step is required. Click "+ Add Another Step" to add a step.';
+                stepsError.textContent = '⚠️ At least one job step is required. Click "➕ Add Step" to add a step.';
+                stepsError.classList.remove('hidden');
                 return false;
             }
 
@@ -569,14 +1126,20 @@
 
                 if (!stepName) {
                     stepsError.textContent = `⚠️ Step ${i + 1}: Step name is required`;
+                    stepsError.classList.remove('hidden');
+                    stepEl.querySelector('.step-name').focus();
+                    stepEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     return false;
                 }
                 if (!stepType) {
                     stepsError.textContent = `⚠️ Step ${i + 1}: Step type is required`;
+                    stepsError.classList.remove('hidden');
+                    stepEl.querySelector('.step-type').focus();
+                    stepEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     return false;
                 }
             }
-            stepsError.textContent = '';
+            stepsError.classList.add('hidden');
         }
 
         return true;
@@ -1128,19 +1691,25 @@
         const jsonStr = JSON.stringify(jobDef, null, 2);
         document.getElementById('json-preview').textContent = jsonStr;
 
-        // Update summary
+        // Update summary with cards
         const scheduleType = document.querySelector('input[name="schedule_type"]:checked').value;
         let scheduleText = '';
+        let scheduleIcon = '';
         if (scheduleType === 'none') {
-            scheduleText = '<span class="badge badge-secondary">Manual Only</span> - This job will only run when manually triggered';
+            scheduleText = 'Manual Only';
+            scheduleIcon = '🎯';
         } else if (scheduleType === 'cron') {
-            scheduleText = `<span class="badge badge-primary">Cron</span> - ${document.getElementById('cron-expression').value}`;
+            scheduleText = document.getElementById('cron-expression').value;
+            scheduleIcon = '📅';
         } else if (scheduleType === 'fixed_delay') {
-            scheduleText = `<span class="badge badge-primary">Fixed Delay</span> - ${document.getElementById('delay-seconds').value} seconds`;
+            scheduleText = `${document.getElementById('delay-seconds').value}s delay`;
+            scheduleIcon = '⏱️';
         } else if (scheduleType === 'fixed_rate') {
-            scheduleText = `<span class="badge badge-primary">Fixed Rate</span> - ${document.getElementById('interval-seconds').value} seconds`;
+            scheduleText = `Every ${document.getElementById('interval-seconds').value}s`;
+            scheduleIcon = '🔄';
         } else if (scheduleType === 'one_time') {
-            scheduleText = `<span class="badge badge-primary">One Time</span> - ${document.getElementById('execute-at').value}`;
+            scheduleText = document.getElementById('execute-at').value;
+            scheduleIcon = '🎯';
         }
 
         const triggers = [];
@@ -1155,14 +1724,29 @@
         }
 
         document.getElementById('job-summary').innerHTML = `
-            <h4 style="margin-top: 0;">📋 Job Summary</h4>
-            <div style="display: grid; gap: 0.5rem;">
-                <div><strong>Name:</strong> ${jobDef.name}</div>
-                <div><strong>Schedule:</strong> ${scheduleText}</div>
-                <div><strong>Steps:</strong> ${jobDef.steps.length} step(s)</div>
-                <div><strong>Triggers:</strong> ${triggers.join(', ')}</div>
-                <div><strong>Timeout:</strong> ${jobDef.timeout_seconds} seconds</div>
-                <div><strong>Max Retries:</strong> ${jobDef.max_retries}</div>
+            <div class="summary-card">
+                <div class="summary-card-label">Job Name</div>
+                <div class="summary-card-value">${jobDef.name}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">${scheduleIcon} Schedule</div>
+                <div class="summary-card-value" style="font-size: 1.1rem;">${scheduleText}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">🔧 Steps</div>
+                <div class="summary-card-value">${jobDef.steps.length}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">🎯 Triggers</div>
+                <div class="summary-card-value" style="font-size: 1.1rem;">${triggers.join(', ')}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">⏱️ Timeout</div>
+                <div class="summary-card-value">${jobDef.timeout_seconds}s</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">🔄 Max Retries</div>
+                <div class="summary-card-value">${jobDef.max_retries}</div>
             </div>
         `;
     }
@@ -1171,12 +1755,7 @@
         e.preventDefault();
 
         const jobDef = buildJobDefinition();
-
-        // Debug logging
-        console.log('=== JOB CREATION DEBUG ===');
-        console.log('Job Definition:', jobDef);
-        console.log('JSON Payload:', JSON.stringify(jobDef, null, 2));
-        console.log('========================');
+        const submitBtn = document.getElementById('btn-submit');
 
         // Client-side validation
         const errors = [];
@@ -1189,43 +1768,71 @@
 
         if (errors.length > 0) {
             const errorDiv = document.getElementById('validation-errors');
-            errorDiv.innerHTML = errors.map(e => `<div>• ${e}</div>`).join('');
+            errorDiv.innerHTML = errors.map(e => `<div>⚠️ ${e}</div>`).join('');
             errorDiv.classList.remove('hidden');
             return;
         }
 
+        // Show loading state
+        submitBtn.classList.add('btn-loading');
+        submitBtn.disabled = true;
+        const originalText = submitBtn.textContent;
+        submitBtn.textContent = 'Creating...';
+
         try {
-            console.log('Sending POST request to /api/jobs...');
+            // Get auth token from cookie
+            const authToken = document.cookie
+                .split('; ')
+                .find(row => row.startsWith('auth_token='))
+                ?.split('=')[1];
+
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+
+            // Add Authorization header if token exists
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+
             const response = await fetch('/api/jobs', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: headers,
                 body: JSON.stringify(jobDef)
             });
 
-            console.log('Response status:', response.status);
             const result = await response.json();
-            console.log('Response body:', result);
 
             if (response.ok) {
-                alert('Job created successfully!');
-                window.location.href = `/dashboard/jobs/${result.data}`;
+                showNotification('Job created successfully!', 'success');
+                setTimeout(() => {
+                    window.location.href = `/dashboard/jobs/${result.data}`;
+                }, 1000);
             } else {
                 const errorDiv = document.getElementById('validation-errors');
                 const errorMsg = result.error || result.message || 'Failed to create job';
-                errorDiv.innerHTML = `<div><strong>Error:</strong> ${errorMsg}</div>`;
+                errorDiv.innerHTML = `<div><strong>❌ Error:</strong> ${errorMsg}</div>`;
                 if (result.details) {
                     errorDiv.innerHTML += `<div style="margin-top: 0.5rem;"><small>${result.details}</small></div>`;
                 }
                 errorDiv.classList.remove('hidden');
-                console.error('Job creation failed:', result);
+                showNotification('Failed to create job', 'error');
+
+                // Reset button
+                submitBtn.classList.remove('btn-loading');
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
             }
         } catch (error) {
             const errorDiv = document.getElementById('validation-errors');
-            errorDiv.innerHTML = `<div><strong>Error:</strong> ${error.message}</div>`;
+            errorDiv.innerHTML = `<div><strong>❌ Error:</strong> ${error.message}</div>`;
             errorDiv.classList.remove('hidden');
-            console.error('Job creation error:', error);
+            showNotification('Network error occurred', 'error');
+
+            // Reset button
+            submitBtn.classList.remove('btn-loading');
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
         }
     }
 </script>

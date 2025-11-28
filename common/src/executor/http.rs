@@ -450,6 +450,9 @@ mod tests {
                 query_type: QueryType::RawSql,
             },
             condition: None,
+            on_failure: None,
+            timeout_seconds: None,
+            retry_count: None,
         };
 
         let mut context = JobContext {
