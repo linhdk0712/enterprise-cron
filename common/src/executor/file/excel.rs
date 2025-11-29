@@ -3,7 +3,7 @@
 
 use crate::errors::ExecutionError;
 use crate::models::{FileMetadata, FileProcessingOptions, JobContext};
-use crate::storage::service::MinIOService;
+use crate::storage::StorageService;
 use calamine::{open_workbook_auto_from_rs, Reader, Sheets};
 use chrono::Utc;
 use rust_xlsxwriter::{Format, Workbook, Worksheet};
@@ -14,12 +14,12 @@ use tracing::{info, instrument};
 
 /// Excel file processor
 pub struct ExcelProcessor {
-    storage: Arc<dyn MinIOService>,
+    storage: Arc<dyn StorageService>,
 }
 
 impl ExcelProcessor {
     /// Create a new Excel processor
-    pub fn new(storage: Arc<dyn MinIOService>) -> Self {
+    pub fn new(storage: Arc<dyn StorageService>) -> Self {
         Self { storage }
     }
 

@@ -5,7 +5,7 @@
 use crate::errors::ExecutionError;
 use crate::models::SftpAuth;
 use ssh2::Session;
-use std::io;
+
 use std::net::TcpStream;
 use std::path::Path;
 use tracing::{debug, error, info, instrument};

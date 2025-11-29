@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "DRY Refactor Detector",
+  "description": "Phát hiện các hàm có thể tái sử dụng trong codebase hiện tại, tránh tạo code trùng lặp, đề xuất cách refactor để tổng quát hóa các hàm hiện có, và duy trì nguyên tắc DRY (Don't Repeat Yourself)",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*.rs"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the edited Rust file for potential code duplication and refactoring opportunities:\n\n1. **Detect Reusable Functions**: Scan the file and related files in the same module for similar code patterns, repeated logic, or functions that could be generalized.\n\n2. **Identify Duplication**: Look for:\n   - Similar function implementations with minor variations\n   - Repeated error handling patterns\n   - Duplicated validation logic\n   - Similar database queries or API calls\n   - Repeated transformation or mapping logic\n\n3. **Suggest Refactoring**: Propose specific refactoring strategies:\n   - Extract common logic into shared utility functions\n   - Create trait abstractions for similar behaviors\n   - Generalize functions with generic parameters\n   - Move shared code to appropriate modules (following structure.md)\n   - Suggest builder patterns for complex object construction\n\n4. **DRY Compliance Check**: Verify the code follows DRY principles and RECC 2025 rules:\n   - No duplicate error handling (use thiserror properly)\n   - No repeated instrumentation patterns\n   - No duplicated configuration loading\n   - Consistent use of shared types and constants\n\n5. **Provide Concrete Examples**: Show before/after code snippets demonstrating:\n   - How to extract the reusable function\n   - Where to place it (following structure.md guidelines)\n   - How to update call sites\n   - Any trait or interface definitions needed\n\n6. **Consider Module Organization**: Ensure refactored code follows:\n   - File naming conventions (descriptive names, not utils.rs)\n   - File size limits (≤400 lines)\n   - Single responsibility principle\n   - Proper module structure with mod.rs\n\nOnly suggest refactoring if there are genuine opportunities. If the code is already DRY and well-organized, acknowledge that."
+  }
+}

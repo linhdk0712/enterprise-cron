@@ -1,10 +1,10 @@
 // Job Context management for multi-step jobs
-// Requirements: 13.7, 13.8 - Load and save Job Context from MinIO
+// Requirements: 13.7, 13.8 - Load and save Job Context from storage
 // RECC 2025: No unwrap(), use #[tracing::instrument], proper error handling
 
 use crate::errors::ExecutionError;
 use crate::models::JobContext;
-use crate::storage::MinIOService;
+use crate::storage::StorageService;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument};
@@ -23,7 +23,7 @@ pub trait ContextManager: Send + Sync {
     ) -> Result<JobContext, ExecutionError>;
 
     /// Save job context to storage
-    /// Requirements: 13.7 - Persist Job Context to MinIO after each step
+    /// Requirements: 13.7 - Persist Job Context after each step
     async fn save_context(&self, context: &JobContext) -> Result<(), ExecutionError>;
 
     /// Initialize a new job context for a new execution
@@ -35,23 +35,23 @@ pub trait ContextManager: Send + Sync {
     ) -> Result<JobContext, ExecutionError>;
 }
 
-/// Job context manager implementation using MinIO
-/// Requirements: 13.7, 13.8 - Manage Job Context with MinIO storage
+/// Job context manager implementation using Storage service
+/// Requirements: 13.7, 13.8 - Manage Job Context with storage
 pub struct JobContextManager {
-    minio_service: Arc<dyn MinIOService>,
+    storage_service: Arc<dyn StorageService>,
 }
 
 impl JobContextManager {
-    /// Create a new JobContextManager with MinIO service
+    /// Create a new JobContextManager with Storage service
     /// Requirements: 13.7 - Initialize context manager with storage
-    pub fn new(minio_service: Arc<dyn MinIOService>) -> Self {
-        Self { minio_service }
+    pub fn new(storage_service: Arc<dyn StorageService>) -> Self {
+        Self { storage_service }
     }
 }
 
 #[async_trait]
 impl ContextManager for JobContextManager {
-    /// Load job context from MinIO
+    /// Load job context from storage
     /// Requirements: 13.8 - Load Job Context for subsequent steps
     /// Property 84: Job Context loading for subsequent steps
     #[instrument(skip(self), fields(job_id = %job_id, execution_id = %execution_id))]
@@ -63,10 +63,10 @@ impl ContextManager for JobContextManager {
         debug!(
             job_id = %job_id,
             execution_id = %execution_id,
-            "Loading job context from MinIO"
+            "Loading job context from storage"
         );
 
-        self.minio_service
+        self.storage_service
             .load_context(job_id, execution_id)
             .await
             .map_err(|e| {
@@ -74,7 +74,7 @@ impl ContextManager for JobContextManager {
                     error = %e,
                     job_id = %job_id,
                     execution_id = %execution_id,
-                    "Failed to load job context from MinIO"
+                    "Failed to load job context from storage"
                 );
                 ExecutionError::ContextLoadFailed(format!(
                     "Failed to load context for execution {}: {}",
@@ -83,19 +83,19 @@ impl ContextManager for JobContextManager {
             })
     }
 
-    /// Save job context to MinIO
-    /// Requirements: 13.7 - Persist Job Context to MinIO after each step
-    /// Property 82: Job Context persistence to MinIO
+    /// Save job context to storage
+    /// Requirements: 13.7 - Persist Job Context after each step
+    /// Property 82: Job Context persistence
     #[instrument(skip(self, context), fields(job_id = %context.job_id, execution_id = %context.execution_id))]
     async fn save_context(&self, context: &JobContext) -> Result<(), ExecutionError> {
         info!(
             job_id = %context.job_id,
             execution_id = %context.execution_id,
             steps_count = context.steps.len(),
-            "Saving job context to MinIO"
+            "Saving job context to storage"
         );
 
-        self.minio_service
+        self.storage_service
             .store_context(context)
             .await
             .map_err(|e| {
@@ -103,7 +103,7 @@ impl ContextManager for JobContextManager {
                     error = %e,
                     job_id = %context.job_id,
                     execution_id = %context.execution_id,
-                    "Failed to save job context to MinIO"
+                    "Failed to save job context to storage"
                 );
                 ExecutionError::ContextSaveFailed(format!(
                     "Failed to save context for execution {}: {}",
@@ -135,7 +135,7 @@ impl ContextManager for JobContextManager {
 
         let context = JobContext::new(execution_id, job_id);
 
-        // Save the initial empty context to MinIO
+        // Save the initial empty context to storage
         self.save_context(&context).await?;
 
         debug!(
@@ -156,12 +156,12 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
 
-    // Mock MinIO service for testing
-    struct MockMinIOService {
+    // Mock Storage service for testing
+    struct MockStorageService {
         contexts: Mutex<HashMap<(Uuid, Uuid), JobContext>>,
     }
 
-    impl MockMinIOService {
+    impl MockStorageService {
         fn new() -> Self {
             Self {
                 contexts: Mutex::new(HashMap::new()),
@@ -170,26 +170,23 @@ mod tests {
     }
 
     #[async_trait]
-    impl MinIOService for MockMinIOService {
+    impl StorageService for MockStorageService {
         async fn store_job_definition(
             &self,
             _job_id: Uuid,
             _definition: &str,
-        ) -> Result<String, StorageError> {
-            Ok("mock_path".to_string())
+        ) -> Result<(), StorageError> {
+            Ok(())
         }
 
         async fn load_job_definition(&self, _job_id: Uuid) -> Result<String, StorageError> {
             Ok("{}".to_string())
         }
 
-        async fn store_context(&self, context: &JobContext) -> Result<String, StorageError> {
+        async fn store_context(&self, context: &JobContext) -> Result<(), StorageError> {
             let mut contexts = self.contexts.lock().unwrap();
             contexts.insert((context.job_id, context.execution_id), context.clone());
-            Ok(format!(
-                "jobs/{}/executions/{}/context.json",
-                context.job_id, context.execution_id
-            ))
+            Ok(())
         }
 
         async fn load_context(
@@ -201,7 +198,7 @@ mod tests {
             contexts
                 .get(&(job_id, execution_id))
                 .cloned()
-                .ok_or_else(|| StorageError::MinioError("Context not found".to_string()))
+                .ok_or_else(|| StorageError::NotFound("Context not found".to_string()))
         }
 
         async fn store_file(&self, _path: &str, _data: &[u8]) -> Result<String, StorageError> {
@@ -211,12 +208,20 @@ mod tests {
         async fn load_file(&self, _path: &str) -> Result<Vec<u8>, StorageError> {
             Ok(vec![])
         }
+
+        async fn delete_file(&self, _path: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn list_files(&self, _prefix: &str) -> Result<Vec<String>, StorageError> {
+            Ok(vec![])
+        }
     }
 
     #[tokio::test]
     async fn test_initialize_context() {
-        let minio_service = Arc::new(MockMinIOService::new());
-        let manager = JobContextManager::new(minio_service);
+        let storage_service = Arc::new(MockStorageService::new());
+        let manager = JobContextManager::new(storage_service);
 
         let job_id = Uuid::new_v4();
         let execution_id = Uuid::new_v4();
@@ -234,8 +239,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_save_and_load_context() {
-        let minio_service = Arc::new(MockMinIOService::new());
-        let manager = JobContextManager::new(minio_service);
+        let storage_service = Arc::new(MockStorageService::new());
+        let manager = JobContextManager::new(storage_service);
 
         let job_id = Uuid::new_v4();
         let execution_id = Uuid::new_v4();
@@ -265,8 +270,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_nonexistent_context() {
-        let minio_service = Arc::new(MockMinIOService::new());
-        let manager = JobContextManager::new(minio_service);
+        let storage_service = Arc::new(MockStorageService::new());
+        let manager = JobContextManager::new(storage_service);
 
         let job_id = Uuid::new_v4();
         let execution_id = Uuid::new_v4();
@@ -281,8 +286,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_context_update_after_step() {
-        let minio_service = Arc::new(MockMinIOService::new());
-        let manager = JobContextManager::new(minio_service);
+        let storage_service = Arc::new(MockStorageService::new());
+        let manager = JobContextManager::new(storage_service);
 
         let job_id = Uuid::new_v4();
         let execution_id = Uuid::new_v4();

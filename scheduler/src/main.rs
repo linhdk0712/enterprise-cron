@@ -1,35 +1,25 @@
 // Scheduler binary entry point
 // Requirements: 9.4, 12.3, 7.6
 
+use common::bootstrap;
 use common::config::Settings;
-use common::db::{DbPool, RedisPool};
 use common::lock::RedLock;
-use common::queue::{NatsClient, NatsJobPublisher};
+use common::queue::NatsJobPublisher;
 use common::scheduler::{Scheduler, SchedulerConfig, SchedulerEngine};
 use std::sync::Arc;
-use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize tracing/logging
     // Requirements: 5.1, 5.2, 5.9 - Structured logging with JSON format
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "scheduler=info,common=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer().json())
-        .init();
+    bootstrap::init_json_tracing();
 
     info!("Starting Vietnam Enterprise Cron Scheduler");
 
     // Load configuration
     // Requirements: 7.5 - Configuration management
-    let settings = Settings::load().map_err(|e| {
-        error!(error = %e, "Failed to load configuration");
-        e
-    })?;
+    let settings = Settings::load()?;
 
     info!(
         database_url = %settings.database.url,
@@ -40,46 +30,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Initialize database connection pool
     // Requirements: 12.4 - PostgreSQL connection pool
-    info!("Initializing database connection pool");
-    let db_pool = DbPool::new(&settings.database).await.map_err(|e| {
-        error!(error = %e, "Failed to initialize database pool");
-        e
-    })?;
-    info!("Database connection pool initialized");
+    let db_pool = bootstrap::init_database_pool(&settings).await?;
 
     // Initialize Redis connection pool
     // Requirements: 4.1 - Redis for distributed locking
-    info!("Initializing Redis connection pool");
-    let redis_pool = RedisPool::new(&settings.redis).await.map_err(|e| {
-        error!(error = %e, "Failed to initialize Redis pool");
-        e
-    })?;
-    info!("Redis connection pool initialized");
+    let redis_pool = bootstrap::init_redis_pool(&settings).await?;
 
     // Initialize NATS client
     // Requirements: 4.2 - NATS JetStream for job queue
-    info!("Initializing NATS client");
-    let nats_config = common::queue::NatsConfig {
-        url: settings.nats.url.clone(),
-        stream_name: settings.nats.stream_name.clone(),
-        subject: "jobs.>".to_string(),
-        max_age_seconds: 86400, // 24 hours
-        max_messages: 1_000_000,
-        consumer_name: settings.nats.consumer_name.clone(),
-        max_deliver: 10,
-    };
-    let nats_client = NatsClient::new(nats_config).await.map_err(|e| {
-        error!(error = %e, "Failed to initialize NATS client");
-        e
-    })?;
-    info!("NATS client initialized");
+    let nats_client = bootstrap::init_nats_client(&settings, &settings.nats.consumer_name).await?;
 
     // Initialize NATS stream
     info!("Initializing NATS stream");
-    nats_client.initialize_stream().await.map_err(|e| {
-        error!(error = %e, "Failed to initialize NATS stream");
-        e
-    })?;
+    nats_client.initialize_stream().await?;
     info!("NATS stream initialized");
 
     // Create distributed lock
@@ -111,22 +74,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let scheduler_for_shutdown = scheduler_clone.clone();
 
     tokio::spawn(async move {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to listen for Ctrl+C");
-        info!("Received Ctrl+C signal, initiating graceful shutdown");
-        if let Err(e) = scheduler_for_shutdown.stop().await {
-            error!(error = %e, "Error during scheduler shutdown");
+        if let Ok(()) = tokio::signal::ctrl_c().await {
+            info!("Received Ctrl+C signal, initiating graceful shutdown");
+            if let Err(e) = scheduler_for_shutdown.stop().await {
+                tracing::error!(error = %e, "Error during scheduler shutdown");
+            }
         }
     });
 
     // Start the scheduler
     // Requirements: 7.1 - Start scheduler polling loop
     info!("Starting scheduler polling loop");
-    if let Err(e) = scheduler_clone.start().await {
-        error!(error = %e, "Scheduler error");
-        return Err(e);
-    }
+    scheduler_clone.start().await?;
 
     info!("Scheduler stopped");
     Ok(())

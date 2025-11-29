@@ -2,11 +2,11 @@
 // Requirements: 13.4 - Execute steps sequentially with retry logic
 
 use crate::db::repositories::execution::ExecutionRepository;
-use crate::errors::ExecutionError;
+
 use crate::executor::JobExecutor;
 use crate::models::{ExecutionStatus, Job, JobContext, JobExecution, JobStep, JobType, StepOutput};
 use crate::retry::RetryStrategy;
-use crate::storage::MinIOService;
+use crate::storage::StorageService;
 use crate::worker::reference::ReferenceResolver;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,7 +20,7 @@ pub struct StepExecutor {
     http_executor: Arc<dyn JobExecutor>,
     database_executor: Arc<dyn JobExecutor>,
     file_executor: Arc<dyn JobExecutor>,
-    minio_service: Arc<dyn MinIOService>,
+    storage_service: Arc<dyn StorageService>,
     _reference_resolver: Arc<ReferenceResolver>,
     circuit_breaker_manager: Arc<CircuitBreakerManager>,
     retry_strategy: Arc<dyn RetryStrategy>,
@@ -33,7 +33,7 @@ impl StepExecutor {
         http_executor: Arc<dyn JobExecutor>,
         database_executor: Arc<dyn JobExecutor>,
         file_executor: Arc<dyn JobExecutor>,
-        minio_service: Arc<dyn MinIOService>,
+        storage_service: Arc<dyn StorageService>,
         reference_resolver: Arc<ReferenceResolver>,
         circuit_breaker_manager: Arc<CircuitBreakerManager>,
         retry_strategy: Arc<dyn RetryStrategy>,
@@ -43,7 +43,7 @@ impl StepExecutor {
             http_executor,
             database_executor,
             file_executor,
-            minio_service,
+            storage_service,
             _reference_resolver: reference_resolver,
             circuit_breaker_manager,
             retry_strategy,
@@ -100,15 +100,15 @@ impl StepExecutor {
                     context.set_step_output(step.id.clone(), step_output);
 
                     // Persist context after each step
-                    if let Err(e) = self.minio_service.store_context(context).await {
-                        error!(error = %e, "Failed to save context to MinIO after step");
+                    if let Err(e) = self.storage_service.store_context(context).await {
+                        error!(error = %e, "Failed to save context to storage after step");
                         return Err(anyhow::anyhow!("Failed to save context: {}", e));
                     }
 
                     info!(
                         step_id = %step.id,
                         completed_steps = context.completed_steps_count(),
-                        "Context saved to MinIO after step completion"
+                        "Context saved to storage after step completion"
                     );
                 }
                 Ok(Err(e)) => {

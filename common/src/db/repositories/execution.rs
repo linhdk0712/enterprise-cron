@@ -1,6 +1,7 @@
 // Execution repository implementation
 // Requirements: 3.12, 4.3, 6.2 - Execution history, idempotency, and filtering
 
+use super::queries::execution_queries;
 use crate::db::DbPool;
 use crate::errors::DatabaseError;
 use crate::models::{ExecutionStatus, JobExecution};
@@ -30,17 +31,12 @@ impl ExecutionRepository {
         // Store trigger_source as string for the database
         let trigger_source_str = execution.trigger_source.to_string();
 
-        // Store full trigger_source data as JSONB
-        let trigger_metadata = serde_json::to_value(&execution.trigger_source).map_err(|e| {
-            DatabaseError::QueryFailed(format!("Failed to serialize trigger_source: {}", e))
-        })?;
-
         sqlx::query(
             r#"
             INSERT INTO job_executions (
                 id, job_id, idempotency_key, status, attempt,
                 trigger_source, trigger_metadata, current_step,
-                minio_context_path, started_at, completed_at,
+                context, started_at, completed_at,
                 result, error, created_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
@@ -52,9 +48,9 @@ impl ExecutionRepository {
         .bind(execution.status.to_string())
         .bind(execution.attempt as i32)
         .bind(trigger_source_str)
-        .bind(trigger_metadata)
+        .bind(&execution.trigger_metadata)
         .bind(&execution.current_step)
-        .bind(&execution.minio_context_path)
+        .bind(&execution.context)
         .bind(execution.started_at)
         .bind(execution.completed_at)
         .bind(&execution.result)
@@ -83,10 +79,11 @@ impl ExecutionRepository {
             SET status = $2,
                 attempt = $3,
                 current_step = $4,
-                started_at = $5,
-                completed_at = $6,
-                result = $7,
-                error = $8
+                context = $5,
+                started_at = $6,
+                completed_at = $7,
+                result = $8,
+                error = $9
             WHERE id = $1
             "#,
         )
@@ -94,6 +91,7 @@ impl ExecutionRepository {
         .bind(execution.status.to_string())
         .bind(execution.attempt as i32)
         .bind(&execution.current_step)
+        .bind(&execution.context)
         .bind(execution.started_at)
         .bind(execution.completed_at)
         .bind(&execution.result)
@@ -129,7 +127,7 @@ impl ExecutionRepository {
             r#"
             SELECT 
                 id, job_id, idempotency_key, status, attempt,
-                trigger_source, current_step, minio_context_path,
+                trigger_source, trigger_metadata, current_step, context,
                 started_at, completed_at, result, error, created_at
             FROM job_executions
             WHERE idempotency_key = $1
@@ -149,7 +147,7 @@ impl ExecutionRepository {
             r#"
             SELECT 
                 id, job_id, idempotency_key, status, attempt,
-                trigger_source, current_step, minio_context_path,
+                trigger_source, trigger_metadata, current_step, context,
                 started_at, completed_at, result, error, created_at
             FROM job_executions
             WHERE id = $1
@@ -178,7 +176,7 @@ impl ExecutionRepository {
             r#"
             SELECT 
                 id, job_id, idempotency_key, status, attempt,
-                trigger_source, current_step, minio_context_path,
+                trigger_source, trigger_metadata, current_step, context,
                 started_at, completed_at, result, error, created_at
             FROM job_executions
             WHERE created_at >= $1
@@ -240,7 +238,7 @@ impl ExecutionRepository {
             r#"
             SELECT 
                 id, job_id, idempotency_key, status, attempt,
-                trigger_source, current_step, minio_context_path,
+                trigger_source, trigger_metadata, current_step, context,
                 started_at, completed_at, result, error, created_at
             FROM job_executions
             WHERE job_id = $1 AND created_at >= $2
@@ -265,7 +263,7 @@ impl ExecutionRepository {
             r#"
             SELECT 
                 id, job_id, idempotency_key, status, attempt,
-                trigger_source, current_step, minio_context_path,
+                trigger_source, trigger_metadata, current_step, context,
                 started_at, completed_at, result, error, created_at
             FROM job_executions
             WHERE job_id = $1

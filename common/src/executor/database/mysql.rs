@@ -8,13 +8,13 @@ use std::time::Duration;
 
 /// MySQL query executor
 pub struct MySQLExecutor {
-    timeout: Duration,
+    _timeout: Duration,
 }
 
 impl MySQLExecutor {
     /// Create a new MySQL executor
     pub fn new(timeout: Duration) -> Self {
-        Self { timeout }
+        Self { _timeout: timeout }
     }
 
     /// Execute MySQL query

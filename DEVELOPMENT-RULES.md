@@ -339,7 +339,8 @@ tokio = { version = "1.35", features = ["full"] }
 ### 3.4 Multi-Step Jobs (Requirement 13)
 
 1. **Job Context**
-   - Store in MinIO: `jobs/{job_id}/executions/{execution_id}/context.json`
+   - Store in PostgreSQL: `job_executions.context` (JSONB column)
+   - Cache in Redis with TTL (30 days)
    - Load before each step
    - Save after each step
 
@@ -419,10 +420,10 @@ rust-enterprise-cron/
 │       ├── retry.rs        # Exponential backoff
 │       ├── schedule.rs     # Schedule calculations
 │       ├── scheduler/      # Scheduler engine
-│       ├── storage/        # MinIO integration
+│       ├── storage/        # Storage service (PostgreSQL + Redis + Filesystem)
 │       │   ├── mod.rs
-│       │   ├── minio.rs
-│       │   └── service.rs
+│       │   ├── postgres_storage.rs
+│       │   └── redis_client.rs
 │       ├── substitution.rs # Variable substitution
 │       ├── telemetry.rs    # Logging, metrics, tracing
 │       ├── webhook.rs      # Webhook validation
@@ -558,9 +559,9 @@ rust-enterprise-cron/
                 │                         │
         ┌───────┴─────────────────────────┴────────┐
         │                                           │
-    ┌───▼───┐  ┌─────┐  ┌──────┐  ┌───────┐
-    │ PgSQL │  │Redis│  │ NATS │  │ MinIO │
-    └───────┘  └─────┘  └──────┘  └───────┘
+    ┌───▼───┐  ┌─────┐  ┌──────┐  ┌──────────┐
+    │ PgSQL │  │Redis│  │ NATS │  │Filesystem│
+    └───────┘  └─────┘  └──────┘  └──────────┘
 ```
 
 ### 5.3 Data Flow Patterns
@@ -568,20 +569,20 @@ rust-enterprise-cron/
 1. **Job Scheduling Flow**
    - Scheduler polls DB → finds due jobs
    - Acquires Redis lock
-   - Loads job definition from MinIO
+   - Loads job definition from PostgreSQL (cached in Redis)
    - Publishes to NATS queue
    - Releases lock
 
 2. **Job Execution Flow**
    - Worker consumes from NATS
    - Checks idempotency key
-   - Loads job definition from MinIO
+   - Loads job definition from PostgreSQL (cached in Redis)
    - For each step:
-     - Load Job Context from MinIO
+     - Load Job Context from PostgreSQL (cached in Redis)
      - Resolve variables/references
      - Execute step
      - Save step output to Job Context
-     - Persist Job Context to MinIO
+     - Persist Job Context to PostgreSQL (update Redis cache)
    - Record execution result in DB
    - Acknowledge NATS message
 
@@ -596,11 +597,13 @@ rust-enterprise-cron/
 ### 5.4 Storage Strategy
 
 - **PostgreSQL**: Job metadata, execution history, users, variables
-- **Redis**: Distributed locks, rate limiting
+- **Redis**: Distributed locks, rate limiting, cache (job definitions/context)
 - **NATS JetStream**: Job queue with persistence
-- **MinIO**: Job definitions, execution context, files
-  - `jobs/{job_id}/definition.json`
-  - `jobs/{job_id}/executions/{execution_id}/context.json`
+- **PostgreSQL**: Job definitions (JSONB), execution context (JSONB), metadata
+  - `jobs.definition` - Job definition JSON
+  - `job_executions.context` - Execution context JSON
+- **Filesystem**: Uploaded/processed files
+  - `./data/files/jobs/{job_id}/executions/{execution_id}/files/`
   - `jobs/{job_id}/executions/{execution_id}/output/*.xlsx`
   - `jobs/{job_id}/executions/{execution_id}/sftp/*.csv`
 
@@ -703,10 +706,10 @@ Answer "YES" to ALL before coding:
 - Reqwest 0.12 (HTTP client, `rustls-tls`)
 
 **Data Storage:**
-- PostgreSQL 14+ (system database)
-- Redis 7.0+ (distributed locking, rate limiting)
+- PostgreSQL 14+ (system database - job definitions, execution context, metadata)
+- Redis 7.0+ (distributed locking, rate limiting, cache for job definitions/context)
 - NATS 2.10+ (job queue with JetStream)
-- MinIO RELEASE.2024-01+ (object storage)
+- Filesystem (file storage for uploaded/processed files)
 
 **Database Drivers:**
 - sqlx 0.8 (PostgreSQL, compile-time checking)
@@ -854,9 +857,10 @@ pub trait JobExecutor {
 - Non-root user: cronuser (UID 1000)
 
 **docker-compose.yml:**
-- PostgreSQL, Redis, NATS, MinIO
+- PostgreSQL, Redis, NATS
 - Scheduler (3 replicas recommended)
 - Worker (2+ replicas with auto-scaling)
+- Filesystem volume mounted at `./data/files`
 - API (2+ replicas behind load balancer)
 
 ### 10.2 Kubernetes (Helm)
@@ -888,7 +892,7 @@ pub trait JobExecutor {
 APP__DATABASE__URL=postgresql://...
 APP__REDIS__URL=redis://...
 APP__NATS__URL=nats://...
-APP__MINIO__ENDPOINT=minio:9000
+APP__STORAGE__FILE_BASE_PATH=./data/files
 APP__AUTH__JWT_SECRET=secret
 ```
 

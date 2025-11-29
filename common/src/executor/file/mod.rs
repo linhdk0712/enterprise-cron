@@ -8,15 +8,15 @@ mod transformations;
 
 use crate::errors::ExecutionError;
 use crate::models::{
-    FileFormat, FileMetadata, FileOperation, FileProcessingOptions, JobContext, JobStep, JobType,
+    FileFormat, FileMetadata, FileOperation, JobContext, JobStep, JobType,
     StepOutput,
 };
-use crate::storage::service::MinIOService;
+use crate::storage::StorageService;
 use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::{info, instrument};
+use tracing::instrument;
 
 pub use excel::ExcelProcessor;
 pub use csv::CsvProcessor;
@@ -24,7 +24,7 @@ pub use transformations::TransformationEngine;
 
 /// FileProcessingExecutor handles Excel and CSV file processing
 pub struct FileProcessingExecutor {
-    storage: Arc<dyn MinIOService>,
+    _storage: Arc<dyn StorageService>,
     excel_processor: ExcelProcessor,
     csv_processor: CsvProcessor,
     transformation_engine: TransformationEngine,
@@ -32,9 +32,9 @@ pub struct FileProcessingExecutor {
 
 impl FileProcessingExecutor {
     /// Create a new FileProcessingExecutor
-    pub fn new(storage: Arc<dyn MinIOService>) -> Self {
+    pub fn new(storage: Arc<dyn StorageService>) -> Self {
         Self {
-            storage: Arc::clone(&storage),
+            _storage: Arc::clone(&storage),
             excel_processor: ExcelProcessor::new(Arc::clone(&storage)),
             csv_processor: CsvProcessor::new(Arc::clone(&storage)),
             transformation_engine: TransformationEngine::new(),

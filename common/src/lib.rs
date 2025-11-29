@@ -1,6 +1,7 @@
 // Common library for shared code across scheduler, worker, and API
 
 pub mod auth;
+pub mod bootstrap;
 pub mod circuit_breaker;
 pub mod config;
 pub mod db;

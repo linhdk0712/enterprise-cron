@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Enforce Programming Rules",
+  "description": "Automatically reviews code changes to ensure compliance with RECC 2025 standards, pre-implementation checklist, design patterns, and project structure guidelines",
+  "version": "1",
+  "when": {
+    "type": "fileCreated",
+    "patterns": [
+      "**/*.rs",
+      "**/Cargo.toml"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the edited file and verify it complies with ALL programming rules:\n\n1. RECC 2025 Rules (implments-rules.md):\n   - No unwrap()/expect() in production code\n   - All async functions have #[tracing::instrument]\n   - Proper error handling with thiserror\n   - File naming follows snake_case and describes content clearly\n   - File size ≤ 400 lines\n   - No generic names (utils.rs, helpers.rs, common.rs)\n\n2. Pre-Implementation Checklist (pre-implementation-checklist.md):\n   - Code matches requirements and design documents\n   - Follows sequence diagrams for component interactions\n   - Uses correct technology stack from tech.md\n   - Follows project structure from structure.md\n\n3. Design Patterns (design.md):\n   - Trait-based abstractions used correctly\n   - Proper error handling strategy\n   - Correctness properties satisfied\n   - Database queries use compile-time checking\n\n4. Project Structure (structure.md):\n   - Code placed in correct module\n   - Proper separation of concerns\n   - Module organization follows standards\n\nIf violations are found, provide specific feedback with:\n- Rule violated\n- Location in code\n- Suggested fix\n- Reference to relevant documentation\n\nIf compliant, confirm adherence to standards."
+  }
+}

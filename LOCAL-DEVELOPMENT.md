@@ -28,8 +28,8 @@ This guide explains how to run the Vietnam Enterprise Cron System locally for de
 #### Step 1: Start Infrastructure Services (Docker)
 
 ```bash
-# Start PostgreSQL, Redis, NATS, MinIO
-docker-compose up -d postgres redis nats minio
+# Start PostgreSQL, Redis, NATS
+docker-compose up -d postgres redis nats
 
 # Wait for services to be healthy (about 10 seconds)
 docker-compose ps
@@ -80,10 +80,8 @@ url = "redis://:redispass@localhost:6379"
 [nats]
 url = "nats://localhost:4222"
 
-[minio]
-endpoint = "localhost:9000"
-access_key = "minioadmin"
-secret_key = "minioadmin"
+[storage]
+file_base_path = "./data/files"
 ```
 
 ## Access Points
@@ -94,7 +92,6 @@ Once all services are running:
 - **API**: http://localhost:8080/api
 - **Health Check**: http://localhost:8080/health
 - **Prometheus Metrics**: http://localhost:9090/metrics
-- **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin)
 - **NATS Monitoring**: http://localhost:8222
 
 ## Default Credentials
@@ -130,9 +127,6 @@ docker logs -f vietnam-cron-redis
 
 # NATS logs
 docker logs -f vietnam-cron-nats
-
-# MinIO logs
-docker logs -f vietnam-cron-minio
 ```
 
 ## Checking Service Status
@@ -209,7 +203,6 @@ sqlx migrate run
    lsof -i :5432  # PostgreSQL
    lsof -i :6379  # Redis
    lsof -i :4222  # NATS
-   lsof -i :9000  # MinIO
    ```
 
 2. Check logs for errors:

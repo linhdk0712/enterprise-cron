@@ -22,12 +22,8 @@ url = "nats://localhost:4222"
 stream_name = "job_stream"
 consumer_name = "job_consumer"
 
-[minio]
-endpoint = "http://localhost:9000"
-access_key = "minioadmin"
-secret_key = "minioadmin"
-bucket = "vietnam-cron"
-region = "us-east-1"
+[storage]
+file_base_path = "./data/files"
 
 [auth]
 mode = "database"  # Options: "database" or "keycloak"

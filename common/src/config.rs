@@ -12,7 +12,7 @@ pub struct Settings {
     pub database: DatabaseConfig,
     pub redis: RedisConfig,
     pub nats: NatsConfig,
-    pub minio: MinioConfig,
+    pub storage: StorageConfig,
     pub auth: AuthConfig,
     pub scheduler: SchedulerConfig,
     pub worker: WorkerConfig,
@@ -47,20 +47,13 @@ pub struct NatsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MinioConfig {
-    pub endpoint: String,
-    pub access_key: String,
-    pub secret_key: String,
-    pub bucket: String,
-    pub region: String,
-    #[serde(default)]
-    pub use_ssl: bool,
-    #[serde(default = "default_verify_ssl")]
-    pub verify_ssl: bool,
+pub struct StorageConfig {
+    #[serde(default = "default_file_base_path")]
+    pub file_base_path: String,
 }
 
-fn default_verify_ssl() -> bool {
-    true
+fn default_file_base_path() -> String {
+    "./data/files".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,12 +154,9 @@ impl Settings {
             return Err("NATS stream_name cannot be empty".to_string());
         }
 
-        // Validate MinIO config
-        if self.minio.endpoint.is_empty() {
-            return Err("MinIO endpoint cannot be empty".to_string());
-        }
-        if self.minio.bucket.is_empty() {
-            return Err("MinIO bucket cannot be empty".to_string());
+        // Validate storage config
+        if self.storage.file_base_path.is_empty() {
+            return Err("Storage file_base_path cannot be empty".to_string());
         }
 
         // Validate auth config
@@ -213,14 +203,8 @@ impl Default for Settings {
                 stream_name: "job_stream".to_string(),
                 consumer_name: "job_consumer".to_string(),
             },
-            minio: MinioConfig {
-                endpoint: "http://localhost:9000".to_string(),
-                access_key: "minioadmin".to_string(),
-                secret_key: "minioadmin".to_string(),
-                bucket: "vietnam-cron".to_string(),
-                region: "us-east-1".to_string(),
-                use_ssl: false,
-                verify_ssl: true,
+            storage: StorageConfig {
+                file_base_path: "./data/files".to_string(),
             },
             auth: AuthConfig {
                 mode: AuthMode::Database,

@@ -1,5 +1,5 @@
 // Job processor - handles job message processing and execution orchestration
-// Requirements: 13.4, 13.7, 13.8 - Load job definition from MinIO and execute multi-step jobs
+// Requirements: 13.4, 13.7, 13.8 - Load job definition from storage and execute multi-step jobs
 
 use crate::db::repositories::execution::ExecutionRepository;
 use crate::db::repositories::job::JobRepository;
@@ -7,7 +7,7 @@ use crate::executor::JobExecutor;
 use crate::models::{ExecutionStatus, Job, JobContext, JobExecution, TriggerSource};
 use crate::queue::JobMessage;
 use crate::retry::RetryStrategy;
-use crate::storage::MinIOService;
+use crate::storage::StorageService;
 use crate::worker::context::ContextManager;
 use crate::worker::reference::ReferenceResolver;
 use chrono::Utc;
@@ -21,7 +21,7 @@ pub struct JobProcessor {
     job_repo: Arc<JobRepository>,
     execution_repo: Arc<ExecutionRepository>,
     _context_manager: Arc<dyn ContextManager>,
-    minio_service: Arc<dyn MinIOService>,
+    storage_service: Arc<dyn StorageService>,
     http_executor: Arc<dyn JobExecutor>,
     database_executor: Arc<dyn JobExecutor>,
     file_executor: Arc<dyn JobExecutor>,
@@ -38,7 +38,7 @@ impl JobProcessor {
         job_repo: Arc<JobRepository>,
         execution_repo: Arc<ExecutionRepository>,
         context_manager: Arc<dyn ContextManager>,
-        minio_service: Arc<dyn MinIOService>,
+        storage_service: Arc<dyn StorageService>,
         http_executor: Arc<dyn JobExecutor>,
         database_executor: Arc<dyn JobExecutor>,
         file_executor: Arc<dyn JobExecutor>,
@@ -51,7 +51,7 @@ impl JobProcessor {
             job_repo,
             execution_repo,
             _context_manager: context_manager,
-            minio_service,
+            storage_service,
             http_executor,
             database_executor,
             file_executor,
@@ -78,7 +78,7 @@ impl JobProcessor {
         }
 
         // Load job metadata and definition
-        let (job_metadata, job_definition) = self.load_job(&job_message).await?;
+        let (_job_metadata, job_definition) = self.load_job(&job_message).await?;
 
         // Create or load execution record
         let mut execution = self.create_or_load_execution(&job_message).await?;
@@ -100,7 +100,7 @@ impl JobProcessor {
             Arc::clone(&self.http_executor),
             Arc::clone(&self.database_executor),
             Arc::clone(&self.file_executor),
-            Arc::clone(&self.minio_service),
+            Arc::clone(&self.storage_service),
             Arc::clone(&self.reference_resolver),
             Arc::clone(&self.circuit_breaker_manager),
             Arc::clone(&self.retry_strategy),
@@ -114,11 +114,11 @@ impl JobProcessor {
         // Update final execution status
         let final_status = self.finalize_execution(&mut execution, execution_result).await;
 
-        // Save final context to MinIO
-        if let Err(e) = self.minio_service.store_context(&context).await {
-            error!(error = %e, "Failed to save final job context to MinIO");
+        // Save final context to storage
+        if let Err(e) = self.storage_service.store_context(&context).await {
+            error!(error = %e, "Failed to save final job context to storage");
         } else {
-            info!("Final job context saved to MinIO successfully");
+            info!("Final job context saved to storage successfully");
         }
 
         self.publish_status_change(execution.id, execution.job_id, final_status).await;
@@ -158,7 +158,7 @@ impl JobProcessor {
     }
 
     /// Load job metadata and definition from database and MinIO
-    async fn load_job(&self, job_message: &JobMessage) -> Result<(crate::db::models::JobMetadata, Job), anyhow::Error> {
+    async fn load_job(&self, job_message: &JobMessage) -> Result<(Job, Job), anyhow::Error> {
         // Load job metadata from database
         let job_metadata = match self.job_repo.find_by_id(job_message.job_id).await {
             Ok(Some(job)) => job,
@@ -174,16 +174,16 @@ impl JobProcessor {
 
         info!(
             job_name = %job_metadata.name,
-            minio_path = %job_metadata.minio_definition_path,
+            job_id = %job_metadata.id,
             "Loaded job metadata from database"
         );
 
-        // Load full job definition from MinIO
-        let job_definition_json = match self.minio_service.load_job_definition(job_message.job_id).await {
+        // Load full job definition from storage
+        let job_definition_json = match self.storage_service.load_job_definition(job_message.job_id).await {
             Ok(json) => json,
             Err(e) => {
-                error!(error = %e, "Failed to load job definition from MinIO");
-                return Err(anyhow::anyhow!("Failed to load job definition from MinIO: {}", e));
+                error!(error = %e, "Failed to load job definition from storage");
+                return Err(anyhow::anyhow!("Failed to load job definition from storage: {}", e));
             }
         };
 
@@ -199,7 +199,7 @@ impl JobProcessor {
         info!(
             job_name = %job.name,
             step_count = job.steps.len(),
-            "Loaded and parsed job definition from MinIO"
+            "Loaded and parsed job definition from storage"
         );
 
         Ok((job_metadata, job))
@@ -210,24 +210,18 @@ impl JobProcessor {
         match self.execution_repo.find_by_id(job_message.execution_id).await {
             Ok(Some(exec)) => Ok(exec),
             Ok(None) => {
-                let new_execution = JobExecution {
-                    id: job_message.execution_id,
-                    job_id: job_message.job_id,
-                    idempotency_key: job_message.idempotency_key.clone(),
-                    status: ExecutionStatus::Running,
-                    attempt: job_message.attempt,
-                    trigger_source: TriggerSource::Scheduled,
-                    current_step: None,
-                    minio_context_path: format!(
-                        "jobs/{}/executions/{}/context.json",
-                        job_message.job_id, job_message.execution_id
-                    ),
-                    started_at: Some(Utc::now()),
-                    completed_at: None,
-                    result: None,
-                    error: None,
-                    created_at: Utc::now(),
-                };
+                // Create new execution using factory method
+                let mut new_execution = JobExecution::new_with_params(
+                    job_message.job_id,
+                    job_message.idempotency_key.clone(),
+                    TriggerSource::Scheduled,
+                    job_message.attempt,
+                );
+                
+                // Override ID to match the message (important for consistency)
+                new_execution.id = job_message.execution_id;
+                new_execution.status = ExecutionStatus::Running;
+                new_execution.started_at = Some(Utc::now());
 
                 self.execution_repo.create(&new_execution).await
                     .map_err(|e| anyhow::anyhow!("Failed to create execution: {}", e))?;
@@ -243,9 +237,9 @@ impl JobProcessor {
 
     /// Load existing context or initialize new one
     async fn load_or_initialize_context(&self, job: &Job, execution: &JobExecution) -> Result<JobContext, anyhow::Error> {
-        match self.minio_service.load_context(job.id, execution.id).await {
+        match self.storage_service.load_context(job.id, execution.id).await {
             Ok(ctx) => {
-                info!(steps_completed = ctx.steps.len(), "Loaded existing job context from MinIO");
+                info!(steps_completed = ctx.steps.len(), "Loaded existing job context from storage");
                 Ok(ctx)
             }
             Err(_) => {

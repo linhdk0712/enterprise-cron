@@ -13,7 +13,7 @@ pub use auth::authenticate_session;
 use crate::errors::ExecutionError;
 use crate::executor::JobExecutor;
 use crate::models::{JobContext, JobStep, StepOutput};
-use crate::storage::MinIOService;
+use crate::storage::StorageService;
 use crate::worker::reference::ReferenceResolver;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -21,16 +21,16 @@ use tracing::instrument;
 
 /// SftpExecutor executes SFTP operations (download/upload)
 pub struct SftpExecutor {
-    minio_service: Arc<dyn MinIOService>,
+    storage_service: Arc<dyn StorageService>,
     reference_resolver: Arc<ReferenceResolver>,
     timeout_seconds: u64,
 }
 
 impl SftpExecutor {
     /// Create a new SftpExecutor
-    pub fn new(minio_service: Arc<dyn MinIOService>, timeout_seconds: u64) -> Self {
+    pub fn new(storage_service: Arc<dyn StorageService>, timeout_seconds: u64) -> Self {
         Self {
-            minio_service,
+            storage_service,
             reference_resolver: Arc::new(ReferenceResolver::new()),
             timeout_seconds,
         }
@@ -38,12 +38,12 @@ impl SftpExecutor {
 
     /// Create a new SftpExecutor with custom reference resolver
     pub fn with_resolver(
-        minio_service: Arc<dyn MinIOService>,
+        storage_service: Arc<dyn StorageService>,
         reference_resolver: Arc<ReferenceResolver>,
         timeout_seconds: u64,
     ) -> Self {
         Self {
-            minio_service,
+            storage_service,
             reference_resolver,
             timeout_seconds,
         }
@@ -62,7 +62,7 @@ impl JobExecutor for SftpExecutor {
         operations::execute_sftp_step(
             step,
             context,
-            &self.minio_service,
+            &self.storage_service,
             &self.reference_resolver,
             self.timeout_seconds,
         )

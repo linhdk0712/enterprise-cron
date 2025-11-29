@@ -11,9 +11,10 @@ use crate::db::repositories::execution::ExecutionRepository;
 use crate::db::repositories::job::JobRepository;
 use crate::errors::QueueError;
 use crate::executor::JobExecutor;
+use crate::queue::consumer::JobConsumer;
 use crate::queue::{JobHandler, JobMessage, NatsClient, NatsJobConsumer};
-use crate::retry::ExponentialBackoff;
-use crate::storage::MinIOService;
+use crate::retry::{ExponentialBackoff, RetryStrategy};
+use crate::storage::StorageService;
 use crate::worker::context::ContextManager;
 use crate::worker::reference::ReferenceResolver;
 use std::sync::Arc;
@@ -30,7 +31,7 @@ pub struct WorkerJobConsumer {
     job_repo: Arc<JobRepository>,
     execution_repo: Arc<ExecutionRepository>,
     context_manager: Arc<dyn ContextManager>,
-    minio_service: Arc<dyn MinIOService>,
+    storage_service: Arc<dyn StorageService>,
     http_executor: Arc<dyn JobExecutor>,
     database_executor: Arc<dyn JobExecutor>,
     file_executor: Arc<dyn JobExecutor>,
@@ -46,7 +47,7 @@ impl WorkerJobConsumer {
         job_repo: Arc<JobRepository>,
         execution_repo: Arc<ExecutionRepository>,
         context_manager: Arc<dyn ContextManager>,
-        minio_service: Arc<dyn MinIOService>,
+        storage_service: Arc<dyn StorageService>,
         http_executor: Arc<dyn JobExecutor>,
         database_executor: Arc<dyn JobExecutor>,
         file_executor: Arc<dyn JobExecutor>,
@@ -59,7 +60,7 @@ impl WorkerJobConsumer {
             Arc::clone(&job_repo),
             Arc::clone(&execution_repo),
             Arc::clone(&context_manager),
-            Arc::clone(&minio_service),
+            Arc::clone(&storage_service),
             Arc::clone(&http_executor),
             Arc::clone(&database_executor),
             Arc::clone(&file_executor),
@@ -74,7 +75,7 @@ impl WorkerJobConsumer {
             job_repo,
             execution_repo,
             context_manager,
-            minio_service,
+            storage_service,
             http_executor,
             database_executor,
             file_executor,
@@ -99,13 +100,13 @@ impl WorkerJobConsumer {
         job_repo: Arc<JobRepository>,
         execution_repo: Arc<ExecutionRepository>,
         context_manager: Arc<dyn ContextManager>,
-        minio_service: Arc<dyn MinIOService>,
+        storage_service: Arc<dyn StorageService>,
         http_executor: Arc<dyn JobExecutor>,
         database_executor: Arc<dyn JobExecutor>,
         file_executor: Arc<dyn JobExecutor>,
         nats_client: Option<async_nats::Client>,
     ) -> JobHandler {
-        let retry_strategy = Arc::new(ExponentialBackoff::new());
+        let retry_strategy: Arc<dyn RetryStrategy> = Arc::new(ExponentialBackoff::new());
         let circuit_breaker_manager = Arc::new(CircuitBreakerManager::new(CircuitBreakerConfig {
             failure_threshold: 5,
             timeout: std::time::Duration::from_secs(60),
@@ -118,7 +119,7 @@ impl WorkerJobConsumer {
                 Arc::clone(&job_repo),
                 Arc::clone(&execution_repo),
                 Arc::clone(&context_manager),
-                Arc::clone(&minio_service),
+                Arc::clone(&storage_service),
                 Arc::clone(&http_executor),
                 Arc::clone(&database_executor),
                 Arc::clone(&file_executor),

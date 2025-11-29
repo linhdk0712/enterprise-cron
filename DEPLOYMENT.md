@@ -41,10 +41,9 @@ open http://localhost:8080
 
 The Docker Compose setup includes:
 
-- **PostgreSQL** (port 5432) - System database
-- **Redis** (port 6379) - Distributed locking and rate limiting
+- **PostgreSQL** (port 5432) - System database (job definitions, execution context, metadata)
+- **Redis** (port 6379) - Distributed locking, rate limiting, and cache
 - **NATS** (port 4222) - Job queue with JetStream
-- **MinIO** (port 9000/9001) - Object storage for job definitions
 - **Scheduler** - Job scheduling component (3 replicas)
 - **Worker** - Job execution component (2 replicas)
 - **API** - REST API and dashboard (port 8080)
@@ -58,19 +57,22 @@ Environment variables can be set in `docker-compose.yml` or via `.env` file:
 ```bash
 # Database
 APP_DATABASE__URL=postgresql://cronuser:cronpass@postgres:5432/vietnam_cron
+APP_DATABASE__MAX_CONNECTIONS=50
+APP_DATABASE__MIN_CONNECTIONS=10
 
-# Redis
+# Redis (Distributed Locking + Rate Limiting + Cache)
 APP_REDIS__URL=redis://:redispass@redis:6379
+APP_REDIS__POOL_SIZE=20
 
 # NATS
 APP_NATS__URL=nats://nats:4222
 
-# MinIO
-APP_MINIO__ENDPOINT=minio:9000
-APP_MINIO__ACCESS_KEY=minioadmin
-APP_MINIO__SECRET_KEY=minioadmin
-APP_MINIO__BUCKET_NAME=vietnam-cron
-APP_MINIO__USE_SSL=false
+# Storage (PostgreSQL + Redis + Filesystem)
+APP_STORAGE__FILE_BASE_PATH=/app/data/files
+
+# Note: Job definitions and execution context are stored in PostgreSQL
+# Redis is used as cache layer with TTL (7 days for definitions, 30 days for context)
+# Files are stored in filesystem at /app/data/files/ (mounted as volume)
 
 # Authentication
 APP_AUTH__MODE=database
@@ -395,10 +397,10 @@ extraEnvVars:
 
 ## Backup and Recovery
 
-### Database Backup
+### Database Backup (Includes Job Definitions & Context)
 
 ```bash
-# Backup PostgreSQL
+# Backup PostgreSQL (includes job definitions and execution context in JSONB columns)
 kubectl exec -n cron-system statefulset/my-cron-postgresql -- \
   pg_dump -U cronuser vietnam_cron > backup.sql
 
@@ -407,13 +409,25 @@ kubectl exec -i -n cron-system statefulset/my-cron-postgresql -- \
   psql -U cronuser vietnam_cron < backup.sql
 ```
 
-### MinIO Backup
+**Note**: Job definitions are stored in `jobs.definition` (JSONB) and execution context in `job_executions.context` (JSONB). PostgreSQL backup includes all job data.
+
+### Filesystem Backup (Files Only)
 
 ```bash
-# Backup MinIO data
-kubectl exec -n cron-system statefulset/my-cron-minio -- \
-  mc mirror /data /backup
+# Backup filesystem data (uploaded/processed files)
+kubectl exec -n cron-system deployment/my-cron-worker -- \
+  tar czf /tmp/files-backup.tar.gz /app/data/files
+
+# Copy backup to local
+kubectl cp cron-system/my-cron-worker-xxx:/tmp/files-backup.tar.gz ./files-backup.tar.gz
+
+# Restore files
+kubectl cp ./files-backup.tar.gz cron-system/my-cron-worker-xxx:/tmp/files-backup.tar.gz
+kubectl exec -n cron-system deployment/my-cron-worker -- \
+  tar xzf /tmp/files-backup.tar.gz -C /
 ```
+
+**Note**: Filesystem backup is only needed for uploaded/processed files. Job definitions and context are in PostgreSQL.
 
 ## Production Checklist
 

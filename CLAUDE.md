@@ -54,7 +54,11 @@ RUST_LOG=debug cargo test test_name -- --nocapture
 ./stop-services.sh           # Stop application services
 
 # Manual start infrastructure only
-docker-compose up -d postgres redis nats minio
+docker-compose up -d postgres redis nats
+
+# Create file storage directory
+mkdir -p ./data/files
+chmod 755 ./data/files
 
 # Run individual services (in separate terminals)
 RUST_LOG=info cargo run --bin scheduler
@@ -87,7 +91,6 @@ sqlx migrate revert
 - API: http://localhost:8080/api
 - Health: http://localhost:8080/health
 - Metrics: http://localhost:9090/metrics
-- MinIO Console: http://localhost:9001 (minioadmin/minioadmin)
 - NATS Monitor: http://localhost:8222
 
 ### Deployment
@@ -126,9 +129,9 @@ Scheduler → polls PostgreSQL for due jobs
          → releases lock
 
 Worker → consumes message from NATS queue
-       → loads job definition from MinIO
+       → loads job definition from PostgreSQL (with Redis cache)
        → executes steps sequentially (HTTP/DB/File/SFTP)
-       → stores Job Context in MinIO between steps
+       → stores Job Context in PostgreSQL (with Redis cache) between steps
        → updates execution status in PostgreSQL
        → on failure: retries with exponential backoff → Dead Letter Queue
 
@@ -154,7 +157,8 @@ API → serves HTMX dashboard
 - `SftpExecutor` - SFTP upload/download
 
 **Multi-Step Execution**: Jobs defined as JSON with sequential steps:
-- Job Context stored in MinIO: `jobs/{job_id}/executions/{execution_id}/context.json`
+- Job Context stored in PostgreSQL (`job_executions.context` JSONB column)
+- Redis cache for fast access (TTL: 30 days)
 - Step output references: `{{steps.step1.output.field}}`
 - Variable substitution: `${VAR_NAME}`
 - Webhook data: `{{webhook.payload.field}}`
@@ -172,14 +176,17 @@ API → serves HTMX dashboard
 
 ### Storage Layer
 
-- **PostgreSQL** - Job metadata, execution history, users, variables
-- **Redis** - Distributed locks (RedLock), rate limiting
+- **PostgreSQL** - Job metadata, execution history, users, variables, job definitions, execution context
+  - `jobs.definition` (JSONB) - Job definitions
+  - `job_executions.context` (JSONB) - Execution context
+  - `job_executions.trigger_metadata` (JSONB) - Trigger metadata
+- **Redis** - Distributed locks (RedLock), rate limiting, cache for definitions/context
+  - `storage:job_def:{job_id}` - Cached job definitions (TTL: 7 days)
+  - `storage:job_ctx:{job_id}:{execution_id}` - Cached execution context (TTL: 30 days)
 - **NATS JetStream** - Job queue with exactly-once delivery
-- **MinIO/S3** - Job definitions, execution context, files
-  - `jobs/{job_id}/definition.json`
-  - `jobs/{job_id}/executions/{execution_id}/context.json`
-  - `jobs/{job_id}/executions/{execution_id}/output/*.xlsx`
-  - `jobs/{job_id}/executions/{execution_id}/sftp/*.csv`
+- **Filesystem** - Uploaded/processed files
+  - `./data/files/jobs/{job_id}/executions/{execution_id}/output/*.xlsx`
+  - `./data/files/jobs/{job_id}/executions/{execution_id}/sftp/*.csv`
 
 ## Critical Coding Standards (RECC 2025)
 
@@ -304,22 +311,29 @@ Config::builder()
 4. Add RBAC permission check via middleware
 5. Update HTMX template if needed (in `api/templates/`)
 
-### Working with MinIO Object Storage
+### Working with Storage Service (PostgreSQL + Redis + Filesystem)
 
 ```rust
 use common::storage::StorageService;
 
-// Store job definition
-storage.put_object(
-    &format!("jobs/{}/definition.json", job_id),
-    serde_json::to_vec(&job)?,
-).await?;
+// Store job definition (PostgreSQL + Redis cache)
+storage.store_job_definition(job_id, &serde_json::to_string(&job)?).await?;
 
-// Load execution context
-let context_bytes = storage.get_object(
-    &format!("jobs/{}/executions/{}/context.json", job_id, execution_id)
-).await?;
-let context: JobContext = serde_json::from_slice(&context_bytes)?;
+// Load job definition (Redis cache → PostgreSQL fallback)
+let definition = storage.load_job_definition(job_id).await?;
+let job: Job = serde_json::from_str(&definition)?;
+
+// Store execution context (PostgreSQL + Redis cache)
+storage.store_context(&context).await?;
+
+// Load execution context (Redis cache → PostgreSQL fallback)
+let context = storage.load_context(job_id, execution_id).await?;
+
+// Store file to filesystem
+storage.store_file("jobs/xxx/executions/yyy/output/file.xlsx", &data).await?;
+
+// Load file from filesystem
+let data = storage.load_file("jobs/xxx/executions/yyy/output/file.xlsx").await?;
 ```
 
 ### Template Substitution

@@ -10,6 +10,7 @@ use crate::state::{AppState, SseEvent};
 use common::db::repositories::execution::{ExecutionFilter, ExecutionRepository};
 use common::models::{ExecutionStatus, JobExecution};
 
+
 /// Query parameters for listing executions
 ///
 /// # Requirements
@@ -118,21 +119,17 @@ pub async fn get_execution(
         None
     };
 
-    // Load JobContext from MinIO to get step outputs
+    // Load JobContext from storage to get step outputs
     // Requirements: 13.8 - Load Job Context to display detailed step results
-    let step_outputs = if !execution.minio_context_path.is_empty() {
+    let step_outputs = {
         tracing::info!(
             execution_id = %id,
             job_id = %execution.job_id,
-            minio_path = %execution.minio_context_path,
-            "Loading JobContext from MinIO"
+            "Loading JobContext from storage"
         );
         
-        // Create MinIOService from MinioClient
-        use common::storage::service::{MinIOService, MinIOServiceImpl};
-        let minio_service = MinIOServiceImpl::new(state.minio_client.clone());
-        
-        match minio_service.load_context(execution.job_id, execution.id).await {
+        // Load context using Storage service (with Redis cache)
+        match state.storage_service.load_context(execution.job_id, execution.id).await {
             Ok(context) => {
                 tracing::info!(
                     execution_id = %id,
@@ -166,9 +163,6 @@ pub async fn get_execution(
                 None
             }
         }
-    } else {
-        tracing::debug!(execution_id = %id, "No MinIO context path available");
-        None
     };
 
     // Parse result as JSON if possible for pretty display

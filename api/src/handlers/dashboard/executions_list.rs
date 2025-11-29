@@ -10,6 +10,7 @@ use crate::handlers::ErrorResponse;
 use crate::state::AppState;
 use crate::templates::TEMPLATES;
 use super::ExecutionQueryParams;
+use super::shared_utils::{setup_htmx_context, calculate_pagination, db_error};
 
 /// Executions partial (HTMX)
 #[tracing::instrument(skip(state, headers))]
@@ -21,12 +22,8 @@ pub async fn executions_partial(
     let mut context = Context::new();
     context.insert("active_page", "executions");
 
-    let is_htmx = headers.get("HX-Request").is_some();
-    context.insert("is_htmx", &is_htmx);
-
     let limit = params.limit.unwrap_or(20);
     let offset = params.offset.unwrap_or(0);
-    let page = (offset / limit) + 1;
 
     // Build count query with filters
     let mut count_query = String::from(
@@ -65,7 +62,7 @@ pub async fn executions_partial(
         .await
         .unwrap_or(0);
 
-    let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i64;
+    let (page, total_pages) = calculate_pagination(offset, limit, total_count);
 
     // Build query with JOIN to get job name and filters
     let mut query = String::from(
@@ -108,7 +105,7 @@ pub async fn executions_partial(
     let rows = sqlx::query(&query)
         .fetch_all(state.db_pool.pool())
         .await
-        .map_err(|e| ErrorResponse::new("database_error", &format!("Database error: {}", e)))?;
+        .map_err(db_error)?;
 
     // Map rows to JSON for template
     let executions: Vec<serde_json::Value> = rows
@@ -162,13 +159,8 @@ pub async fn executions_partial(
     let is_embedded = params.job_id.is_some();
     context.insert("is_embedded", &is_embedded);
 
-    // If HTMX request, return only the content partial
-    // Otherwise, return the full page with layout
-    let template = if is_htmx {
-        "_executions_content.html"
-    } else {
-        "executions.html"
-    };
+    // Setup HTMX context and determine template using shared utility
+    let template = setup_htmx_context(&mut context, &headers, "_executions_content.html", "executions.html");
 
     let html = TEMPLATES.render(template, &context).map_err(|e| {
         tracing::error!(error = %e, "Template rendering failed");

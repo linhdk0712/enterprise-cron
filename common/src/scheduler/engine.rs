@@ -5,7 +5,7 @@ use crate::db::repositories::execution::ExecutionRepository;
 use crate::db::repositories::job::JobRepository;
 use crate::db::DbPool;
 use crate::lock::DistributedLock;
-use crate::models::{ExecutionStatus, Job, JobExecution, TriggerSource};
+use crate::models::{ExecutionStatus, Job, JobExecution};
 use crate::queue::JobPublisher;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -135,26 +135,9 @@ impl SchedulerEngine {
         // For now, we'll create a basic execution
         // TODO: Load full job definition from MinIO in future tasks
 
-        // Create job execution
-        let execution = JobExecution {
-            id: Uuid::new_v4(),
-            job_id: job.id,
-            idempotency_key: format!("{}:{}", job.id, Uuid::new_v4()),
-            status: ExecutionStatus::Pending,
-            attempt: 1,
-            trigger_source: TriggerSource::Scheduled,
-            current_step: None,
-            minio_context_path: format!(
-                "jobs/{}/executions/{}/context.json",
-                job.id,
-                Uuid::new_v4()
-            ),
-            started_at: None,
-            completed_at: None,
-            result: None,
-            error: None,
-            created_at: Utc::now(),
-        };
+        // Create job execution using factory method
+        let idempotency_key = format!("{}:{}", job.id, Uuid::new_v4());
+        let execution = JobExecution::new_scheduled(job.id, idempotency_key);
 
         // Save execution to database
         match self.execution_repo.create(&execution).await {

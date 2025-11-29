@@ -20,10 +20,10 @@ The system consists of six main components:
 2. **Worker**: Consumes jobs from the queue and executes multi-step jobs with various job types (HTTP, Database, FileProcessing, SFTP)
 3. **API Server**: Provides REST API, serves the HTMX dashboard, and handles webhook triggers
 4. **Storage Layer**: 
-   - PostgreSQL for job metadata and execution records
-   - Redis for distributed locks and rate limiting
+   - PostgreSQL for job metadata, execution records, job definitions, and execution context
+   - Redis for distributed locks, rate limiting, and cache (job definitions/context)
    - NATS JetStream for job queue with exactly-once delivery
-   - MinIO for job definitions, execution context, and file storage
+   - Filesystem for uploaded/processed files
 5. **Job Executors**: Specialized executors for HTTP requests, database queries, file processing (Excel/CSV), and SFTP operations
 6. **Webhook Handler**: Receives webhook requests, validates signatures, and queues jobs with webhook data
 
@@ -65,10 +65,8 @@ The system consists of six main components:
 └────────────────┘  └─────────────────┘  └────────────────┘ │
                                                              │
                                                     ┌────────▼────────┐
-                                                    │     MinIO       │
-                                                    │  (Job Defs +    │
-                                                    │   Context +     │
-                                                    │   Files)        │
+                                                    │   Filesystem    │
+                                                    │     (Files)     │
                                                     └─────────────────┘
 ```
 
@@ -77,21 +75,21 @@ The system consists of six main components:
 1. **Job Scheduling Flow**:
    - Scheduler polls database for jobs due for execution
    - Acquires distributed lock via Redis RedLock
-   - Loads job definition from MinIO
+   - Loads job definition from PostgreSQL (with Redis cache)
    - Publishes job to NATS JetStream queue
    - Releases lock
 
 2. **Multi-Step Job Execution Flow**:
    - Worker consumes job from NATS queue
    - Checks idempotency key in database
-   - Loads job definition from MinIO
+   - Loads job definition from PostgreSQL (with Redis cache)
    - Initializes Job Context object
    - For each step in sequence:
-     - Loads current Job Context from MinIO
+     - Loads current Job Context from PostgreSQL (with Redis cache)
      - Resolves variable and step output references
      - Executes step (HTTP, Database, FileProcessing, or SFTP)
      - Stores step output in Job Context
-     - Persists updated Job Context to MinIO
+     - Persists updated Job Context to PostgreSQL (with Redis cache)
    - Records final execution result in database
    - Acknowledges message in NATS
 
@@ -107,12 +105,12 @@ The system consists of six main components:
    - User authenticates via Keycloak or database JWT
    - API validates token and checks RBAC permissions
    - API reads/writes to PostgreSQL
-   - API reads/writes job definitions to MinIO
+   - API reads/writes job definitions to PostgreSQL (with Redis cache)
    - API pushes updates via Server-Sent Events
 
 5. **Job Import/Export Flow**:
-   - Export: API reads job definition from MinIO, masks sensitive data, returns JSON
-   - Import: API validates JSON schema, prompts for sensitive data, stores to MinIO, creates job record
+   - Export: API reads job definition from PostgreSQL, masks sensitive data, returns JSON
+   - Import: API validates JSON schema, prompts for sensitive data, stores to PostgreSQL, creates job record
 
 ## Components and Interfaces
 
@@ -146,9 +144,9 @@ trait JobPublisher {
 **Responsibilities**:
 - Consume jobs from the queue
 - Check idempotency to prevent duplicate execution
-- Load job definitions from MinIO
+- Load job definitions from PostgreSQL (with Redis cache)
 - Execute multi-step jobs sequentially
-- Manage Job Context (load, update, persist to MinIO)
+- Manage Job Context (load, update, persist to PostgreSQL with Redis cache)
 - Resolve variable and step output references
 - Execute jobs based on type (HTTP, Database, FileProcessing, SFTP)
 - Handle retries with exponential backoff
@@ -217,13 +215,15 @@ trait WebhookHandler {
     async fn check_rate_limit(&self, job_id: Uuid) -> Result<bool>;
 }
 
-trait MinIOService {
-    async fn store_job_definition(&self, job_id: Uuid, definition: &str) -> Result<String>;
+trait StorageService {
+    async fn store_job_definition(&self, job_id: Uuid, definition: &str) -> Result<()>;
     async fn load_job_definition(&self, job_id: Uuid) -> Result<String>;
-    async fn store_context(&self, execution_id: Uuid, context: &JobContext) -> Result<String>;
-    async fn load_context(&self, execution_id: Uuid) -> Result<JobContext>;
+    async fn store_context(&self, context: &JobContext) -> Result<()>;
+    async fn load_context(&self, job_id: Uuid, execution_id: Uuid) -> Result<JobContext>;
     async fn store_file(&self, path: &str, data: &[u8]) -> Result<String>;
     async fn load_file(&self, path: &str) -> Result<Vec<u8>>;
+    async fn delete_file(&self, path: &str) -> Result<()>;
+    async fn list_files(&self, prefix: &str) -> Result<Vec<String>>;
 }
 ```
 
@@ -271,7 +271,7 @@ struct Job {
     timeout_seconds: u32,
     max_retries: u32,
     allow_concurrent: bool,
-    minio_definition_path: String,
+    definition: Option<serde_json::Value>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -414,8 +414,9 @@ struct JobExecution {
     status: ExecutionStatus,
     attempt: u32,
     trigger_source: TriggerSource,
+    trigger_metadata: Option<serde_json::Value>,
     current_step: Option<String>,
-    minio_context_path: String,
+    context: serde_json::Value,
     started_at: Option<DateTime<Utc>>,
     completed_at: Option<DateTime<Utc>>,
     result: Option<String>,
@@ -496,7 +497,7 @@ CREATE TABLE jobs (
     schedule_type VARCHAR(50),
     schedule_config JSONB,
     trigger_config JSONB NOT NULL,
-    minio_definition_path VARCHAR(500) NOT NULL,
+    definition JSONB,
     enabled BOOLEAN NOT NULL DEFAULT true,
     timeout_seconds INTEGER NOT NULL DEFAULT 300,
     max_retries INTEGER NOT NULL DEFAULT 10,
@@ -514,7 +515,7 @@ CREATE TABLE job_executions (
     trigger_source VARCHAR(50) NOT NULL,
     trigger_metadata JSONB,
     current_step VARCHAR(255),
-    minio_context_path VARCHAR(500) NOT NULL,
+    context JSONB NOT NULL DEFAULT '{}'::jsonb,
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     result TEXT,
@@ -885,18 +886,18 @@ CREATE TABLE job_stats (
 *For any* system initialization, database migrations should run and create all required tables (jobs, job_executions, variables, job_stats) if they don't exist.
 **Validates: Requirements 12.6**
 
-### Multi-Step Job and MinIO Properties
+### Multi-Step Job and Storage Properties
 
 **Property 76: JSON job definition acceptance**
 *For any* valid JSON job definition document, the system should accept it, and for any invalid JSON, the system should reject it with a clear error.
 **Validates: Requirements 13.1**
 
-**Property 77: MinIO job definition persistence**
-*For any* job definition stored in MinIO, retrieving it should return the same definition (round-trip consistency).
+**Property 77: PostgreSQL job definition persistence**
+*For any* job definition stored in PostgreSQL, retrieving it should return the same definition (round-trip consistency).
 **Validates: Requirements 13.2**
 
-**Property 78: MinIO path format for job definitions**
-*For any* job_id, the MinIO path for the job definition should be `jobs/{job_id}/definition.json`.
+**Property 78: Job definition storage in JSONB column**
+*For any* job_id, the job definition should be stored in the `jobs.definition` JSONB column.
 **Validates: Requirements 13.3**
 
 **Property 79: Sequential step execution**
@@ -911,12 +912,12 @@ CREATE TABLE job_stats (
 *For any* database query step execution, the query result set should be present in the Job Context after the step completes.
 **Validates: Requirements 13.6**
 
-**Property 82: Job Context persistence to MinIO**
-*For any* Job Context persisted to MinIO, retrieving it should return the same context (round-trip consistency).
+**Property 82: Job Context persistence to PostgreSQL**
+*For any* Job Context persisted to PostgreSQL, retrieving it should return the same context (round-trip consistency).
 **Validates: Requirements 13.7**
 
-**Property 83: Job Context path format**
-*For any* job_id and execution_id, the MinIO path for Job Context should be `jobs/{job_id}/executions/{execution_id}/context.json`.
+**Property 83: Job Context storage in JSONB column**
+*For any* job_id and execution_id, the Job Context should be stored in the `job_executions.context` JSONB column.
 **Validates: Requirements 13.7**
 
 **Property 84: Job Context loading for subsequent steps**
@@ -924,19 +925,19 @@ CREATE TABLE job_stats (
 **Validates: Requirements 13.8**
 
 **Property 85: Job Context retention after completion**
-*For any* completed job execution, the final Job Context should remain retrievable from MinIO.
+*For any* completed job execution, the final Job Context should remain retrievable from PostgreSQL.
 **Validates: Requirements 13.9**
 
 **Property 86: Job Context preservation on failure**
-*For any* failed job execution, the Job Context up to the point of failure should be persisted and retrievable from MinIO.
+*For any* failed job execution, the Job Context up to the point of failure should be persisted and retrievable from PostgreSQL.
 **Validates: Requirements 13.10**
 
-**Property 87: Job Context reference in execution details**
-*For any* execution query, the response should include the MinIO path reference to the Job Context.
+**Property 87: Job Context in execution record**
+*For any* execution query, the response should include the Job Context data from the JSONB column.
 **Validates: Requirements 13.11**
 
-**Property 88: Database stores only MinIO path references**
-*For any* job record in the database, it should contain only the MinIO path string, not the full job definition or context data.
+**Property 88: Redis cache for performance**
+*For any* job definition or context read, the system should check Redis cache first before querying PostgreSQL.
 **Validates: Requirements 13.12**
 
 ### Step Output Reference Properties
@@ -972,7 +973,7 @@ CREATE TABLE job_stats (
 ### File Processing Properties
 
 **Property 96: Excel file reading**
-*For any* valid XLSX file in MinIO, the Worker should successfully read and parse it.
+*For any* valid XLSX file in filesystem, the Worker should successfully read and parse it.
 **Validates: Requirements 15.1**
 
 **Property 97: Excel data structure preservation**
@@ -980,7 +981,7 @@ CREATE TABLE job_stats (
 **Validates: Requirements 15.2**
 
 **Property 98: CSV file reading**
-*For any* valid CSV file in MinIO, the Worker should successfully read and parse it.
+*For any* valid CSV file in filesystem, the Worker should successfully read and parse it.
 **Validates: Requirements 15.3**
 
 **Property 99: CSV delimiter support**
@@ -1004,11 +1005,11 @@ CREATE TABLE job_stats (
 **Validates: Requirements 15.8**
 
 **Property 104: File output path format**
-*For any* file written to MinIO, the path should follow the format `jobs/{job_id}/executions/{execution_id}/output/{filename}`.
+*For any* file written to filesystem, the path should follow the format `jobs/{job_id}/executions/{execution_id}/output/{filename}`.
 **Validates: Requirements 15.9**
 
 **Property 105: File metadata storage**
-*For any* file processing step completion, the MinIO file path and row count should be present in the Job Context.
+*For any* file processing step completion, the filesystem file path and row count should be present in the Job Context.
 **Validates: Requirements 15.10**
 
 **Property 106: Invalid file format error handling**
@@ -1143,12 +1144,12 @@ CREATE TABLE job_stats (
 
 ### SFTP Operation Properties
 
-**Property 137: SFTP download to MinIO**
-*For any* SFTP download step, files should be successfully transferred from the SFTP server to MinIO.
+**Property 137: SFTP download to filesystem**
+*For any* SFTP download step, files should be successfully transferred from the SFTP server to filesystem.
 **Validates: Requirements 19.1**
 
-**Property 138: SFTP upload from MinIO**
-*For any* SFTP upload step, files should be successfully transferred from MinIO to the SFTP server.
+**Property 138: SFTP upload from filesystem**
+*For any* SFTP upload step, files should be successfully transferred from filesystem to the SFTP server.
 **Validates: Requirements 19.2**
 
 **Property 139: SFTP password authentication**
@@ -1164,7 +1165,7 @@ CREATE TABLE job_stats (
 **Validates: Requirements 19.5**
 
 **Property 142: SFTP download path format**
-*For any* SFTP download, files should be stored in MinIO at path `jobs/{job_id}/executions/{execution_id}/sftp/downloads/{filename}`.
+*For any* SFTP download, files should be stored in filesystem at path `jobs/{job_id}/executions/{execution_id}/sftp/downloads/{filename}`.
 **Validates: Requirements 19.6**
 
 **Property 143: SFTP upload round-trip**
@@ -1467,12 +1468,8 @@ pool_size = 10
 url = "nats://localhost:4222"
 stream_name = "jobs"
 
-[minio]
-endpoint = "localhost:9000"
-access_key = "minioadmin"
-secret_key = "minioadmin"
-bucket_name = "vietnam-cron"
-use_ssl = false
+[storage]
+file_base_path = "./data/files"
 
 [auth]
 mode = "database"  # or "keycloak"
@@ -1612,9 +1609,6 @@ tera = "1.19"
 oracle = "0.6"  # Updated from 0.5 for better error handling
 mysql_async = "0.34"  # Updated from 0.32 for MySQL 8.0+ compatibility
 
-# MinIO / S3 client
-rust-s3 = "0.34"  # Updated from 0.33 for better async support
-
 # File processing
 calamine = "0.24"  # Updated from 0.22 for better performance
 rust_xlsxwriter = "0.65"  # Updated from 0.56 for more features
@@ -1709,7 +1703,7 @@ src/
 │   └── message.rs          # Message types
 ├── storage/
 │   ├── mod.rs
-│   ├── minio.rs            # MinIO client for object storage
+│   ├── postgres_storage.rs # PostgreSQL + Redis + Filesystem storage
 │   └── file_processor.rs   # File processing utilities
 ├── telemetry/
 │   ├── mod.rs

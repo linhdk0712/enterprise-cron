@@ -1,8 +1,8 @@
 use anyhow::Result;
+use common::bootstrap;
+use common::config::Settings;
 use futures::StreamExt;
-use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod handlers;
 mod middleware;
@@ -10,8 +10,6 @@ mod routes;
 mod state;
 mod templates;
 
-use common::config::Settings;
-use common::db::DbPool;
 use state::{AppState, SseEvent};
 
 /// Subscribe to status change events from worker via NATS
@@ -78,13 +76,7 @@ enum StatusChangeEvent {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "api=info,tower_http=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer().with_target(false))
-        .init();
+    bootstrap::init_human_tracing();
 
     tracing::info!("Starting API server");
 
@@ -97,29 +89,29 @@ async fn main() -> Result<()> {
     );
 
     // Initialize database connection pool
-    let _pg_pool = PgPoolOptions::new()
-        .max_connections(config.database.max_connections as u32)
-        .min_connections(config.database.min_connections as u32)
-        .connect(&config.database.url)
-        .await?;
-    let db_pool = DbPool::new(&config.database).await?;
-    tracing::info!("Database connection pool established");
+    let db_pool = bootstrap::init_database_pool(&config).await?;
 
     // Run migrations (commented out for local development - migrations already exist)
     // sqlx::migrate!("../migrations").run(db_pool.pool()).await?;
     tracing::info!("Database migrations skipped (already applied)");
 
-    // Initialize Redis client
+    // Initialize Redis client (for rate limiting and other features)
     let redis_client = redis::Client::open(config.redis.url.clone())?;
     tracing::info!("Redis client initialized");
+
+    // Initialize Redis connection manager for storage cache
+    let redis_conn_manager = bootstrap::init_redis_connection_manager(&config).await?;
 
     // Initialize NATS client
     let nats_client = async_nats::connect(&config.nats.url).await?;
     tracing::info!("NATS client connected");
 
-    // Initialize MinIO client
-    let minio_client = common::storage::minio::MinioClient::new(&config.minio).await?;
-    tracing::info!("MinIO client initialized");
+    // Initialize Storage service (PostgreSQL + Redis + Filesystem)
+    let storage_service = bootstrap::init_storage_service(
+        &config,
+        db_pool.clone(),
+        std::sync::Arc::new(redis_conn_manager)
+    ).await?;
 
     // Initialize Prometheus metrics exporter
     let _metrics_handle =
@@ -131,7 +123,7 @@ async fn main() -> Result<()> {
         db_pool,
         redis_client,
         nats_client.clone(),
-        minio_client,
+        storage_service,
         config.clone(),
     );
 

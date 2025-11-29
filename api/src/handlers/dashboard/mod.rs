@@ -7,6 +7,7 @@ mod job_details;
 mod executions_list;
 mod variables_list;
 mod job_form;
+mod shared_utils;
 
 pub use stats::dashboard_index;
 pub use jobs_list::jobs_partial;
@@ -14,6 +15,9 @@ pub use job_details::{job_details_modal, job_details_partial};
 pub use executions_list::executions_partial;
 pub use variables_list::variables_partial;
 pub use job_form::job_form_page;
+
+// Re-export shared utilities for use within dashboard module
+
 
 // Shared types
 use serde::Deserialize;

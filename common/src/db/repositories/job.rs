@@ -39,7 +39,7 @@ impl JobRepository {
             r#"
             SELECT 
                 id, name, description, enabled, timeout_seconds, 
-                max_retries, allow_concurrent, minio_definition_path,
+                max_retries, allow_concurrent, definition,
                 trigger_config, created_at, updated_at
             FROM jobs
             WHERE enabled = true
@@ -67,7 +67,7 @@ impl JobRepository {
                 timeout_seconds: row.try_get("timeout_seconds")?,
                 max_retries: row.try_get("max_retries")?,
                 allow_concurrent: row.try_get("allow_concurrent")?,
-                minio_definition_path: row.try_get("minio_definition_path")?,
+                definition: row.try_get("definition")?,
                 created_at: row.try_get("created_at")?,
                 updated_at: row.try_get("updated_at")?,
             };
@@ -95,7 +95,7 @@ impl JobRepository {
             r#"
             INSERT INTO jobs (
                 id, name, description, enabled, timeout_seconds,
-                max_retries, allow_concurrent, minio_definition_path,
+                max_retries, allow_concurrent, definition,
                 trigger_config, created_at, updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -108,7 +108,7 @@ impl JobRepository {
         .bind(job.timeout_seconds as i32)
         .bind(job.max_retries as i32)
         .bind(job.allow_concurrent)
-        .bind(&job.minio_definition_path)
+        .bind(&job.definition)
         .bind(trigger_config_json)
         .bind(job.created_at)
         .bind(job.updated_at)
@@ -129,7 +129,7 @@ impl JobRepository {
             r#"
             SELECT 
                 id, name, description, enabled, timeout_seconds,
-                max_retries, allow_concurrent, minio_definition_path,
+                max_retries, allow_concurrent, definition,
                 trigger_config, created_at, updated_at
             FROM jobs
             WHERE name = $1
@@ -157,7 +157,7 @@ impl JobRepository {
                 timeout_seconds: row.try_get("timeout_seconds")?,
                 max_retries: row.try_get("max_retries")?,
                 allow_concurrent: row.try_get("allow_concurrent")?,
-                minio_definition_path: row.try_get("minio_definition_path")?,
+                definition: row.try_get("definition")?,
                 created_at: row.try_get("created_at")?,
                 updated_at: row.try_get("updated_at")?,
             })
@@ -179,7 +179,7 @@ impl JobRepository {
             r#"
             SELECT 
                 id, name, description, enabled, timeout_seconds,
-                max_retries, allow_concurrent, minio_definition_path,
+                max_retries, allow_concurrent, definition,
                 trigger_config, created_at, updated_at
             FROM jobs
             WHERE id = $1
@@ -207,7 +207,7 @@ impl JobRepository {
                 timeout_seconds: row.try_get("timeout_seconds")?,
                 max_retries: row.try_get("max_retries")?,
                 allow_concurrent: row.try_get("allow_concurrent")?,
-                minio_definition_path: row.try_get("minio_definition_path")?,
+                definition: row.try_get("definition")?,
                 created_at: row.try_get("created_at")?,
                 updated_at: row.try_get("updated_at")?,
             })
@@ -229,7 +229,7 @@ impl JobRepository {
             r#"
             SELECT 
                 id, name, description, enabled, timeout_seconds,
-                max_retries, allow_concurrent, minio_definition_path,
+                max_retries, allow_concurrent, definition,
                 trigger_config, created_at, updated_at
             FROM jobs
             ORDER BY created_at DESC
@@ -257,7 +257,7 @@ impl JobRepository {
                 timeout_seconds: row.try_get("timeout_seconds")?,
                 max_retries: row.try_get("max_retries")?,
                 allow_concurrent: row.try_get("allow_concurrent")?,
-                minio_definition_path: row.try_get("minio_definition_path")?,
+                definition: row.try_get("definition")?,
                 created_at: row.try_get("created_at")?,
                 updated_at: row.try_get("updated_at")?,
             };
@@ -288,7 +288,7 @@ impl JobRepository {
                 timeout_seconds = $5,
                 max_retries = $6,
                 allow_concurrent = $7,
-                minio_definition_path = $8,
+                definition = $8,
                 trigger_config = $9,
                 updated_at = $10
             WHERE id = $1
@@ -301,7 +301,7 @@ impl JobRepository {
         .bind(job.timeout_seconds as i32)
         .bind(job.max_retries as i32)
         .bind(job.allow_concurrent)
-        .bind(&job.minio_definition_path)
+        .bind(&job.definition)
         .bind(trigger_config_json)
         .bind(Utc::now())
         .execute(self.pool.pool())

@@ -8,7 +8,6 @@ use crate::state::AppState;
 use common::import_export::{
     ExportedJob, ImportExportService, ImportExportServiceImpl, ImportResult,
 };
-use common::storage::service::MinIOServiceImpl;
 
 /// Request to export a single job
 /// Requirements: 18.3 - Export single job
@@ -75,11 +74,10 @@ pub async fn export_job(
     State(state): State<AppState>,
     Json(req): Json<ExportJobRequest>,
 ) -> Result<Json<SuccessResponse<ExportJobResponse>>, ErrorResponse> {
-    // Create import/export service
-    let minio_service = MinIOServiceImpl::new(state.minio_client.clone());
+    // Create import/export service (using MinIO service with Redis fallback)
     let service = ImportExportServiceImpl::new(
         state.db_pool.clone(),
-        minio_service,
+        state.storage_service.clone(),
         env!("CARGO_PKG_VERSION").to_string(),
     );
 
@@ -92,8 +90,10 @@ pub async fn export_job(
         })?;
 
     // Generate filename
-    let filename =
-        ImportExportServiceImpl::<MinIOServiceImpl>::generate_export_filename(&exported_job.name);
+    let filename = format!("job_export_{}_{}.json", 
+        exported_job.name.replace(' ', "_"),
+        chrono::Utc::now().format("%Y%m%d_%H%M%S")
+    );
 
     let response = ExportJobResponse {
         job: exported_job,
@@ -111,11 +111,10 @@ pub async fn export_jobs_bulk(
     State(state): State<AppState>,
     Json(req): Json<ExportJobsBulkRequest>,
 ) -> Result<Json<SuccessResponse<ExportJobsBulkResponse>>, ErrorResponse> {
-    // Create import/export service
-    let minio_service = MinIOServiceImpl::new(state.minio_client.clone());
+    // Create import/export service (using MinIO service with Redis fallback)
     let service = ImportExportServiceImpl::new(
         state.db_pool.clone(),
-        minio_service,
+        state.storage_service.clone(),
         env!("CARGO_PKG_VERSION").to_string(),
     );
 
@@ -150,11 +149,10 @@ pub async fn import_job(
     State(state): State<AppState>,
     Json(req): Json<ImportJobRequest>,
 ) -> Result<Json<SuccessResponse<Uuid>>, ErrorResponse> {
-    // Create import/export service
-    let minio_service = MinIOServiceImpl::new(state.minio_client.clone());
+    // Create import/export service (using MinIO service with Redis fallback)
     let service = ImportExportServiceImpl::new(
         state.db_pool.clone(),
-        minio_service,
+        state.storage_service.clone(),
         env!("CARGO_PKG_VERSION").to_string(),
     );
 
@@ -177,11 +175,10 @@ pub async fn import_jobs_bulk(
     State(state): State<AppState>,
     Json(req): Json<ImportJobsBulkRequest>,
 ) -> Result<Json<SuccessResponse<ImportJobsBulkResponse>>, ErrorResponse> {
-    // Create import/export service
-    let minio_service = MinIOServiceImpl::new(state.minio_client.clone());
+    // Create import/export service (using MinIO service with Redis fallback)
     let service = ImportExportServiceImpl::new(
         state.db_pool.clone(),
-        minio_service,
+        state.storage_service.clone(),
         env!("CARGO_PKG_VERSION").to_string(),
     );
 

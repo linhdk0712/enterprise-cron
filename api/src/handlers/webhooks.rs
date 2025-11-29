@@ -9,7 +9,7 @@ use common::models::{
     ExecutionStatus, JobContext, JobExecution, TriggerSource, WebhookData, WebhookResponse,
 };
 use common::queue::publisher::JobPublisher;
-use common::storage::service::MinIOService;
+
 use common::webhook::validate_webhook_signature;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -217,7 +217,7 @@ pub async fn handle_webhook(
     // 8. Create job execution
     let execution_id = Uuid::new_v4();
     let idempotency_key = format!("webhook-{}-{}", webhook.id, execution_id);
-    let minio_context_path = format!("jobs/{}/executions/{}/context.json", job.id, execution_id);
+    let _minio_context_path = format!("jobs/{}/executions/{}/context.json", job.id, execution_id);
 
     let execution = JobExecution {
         id: execution_id,
@@ -229,7 +229,8 @@ pub async fn handle_webhook(
             webhook_url: full_path.clone(),
         },
         current_step: None,
-        minio_context_path: minio_context_path.clone(),
+        context: serde_json::json!({}),
+        trigger_metadata: None,
         started_at: None,
         completed_at: None,
         result: None,
@@ -242,12 +243,10 @@ pub async fn handle_webhook(
     let mut context = JobContext::new(execution_id, job.id);
     context.set_webhook_data(webhook_data);
 
-    // 10. Store Job Context to MinIO
-    // Requirements: 13.7 - Persist Job Context to MinIO
-    let storage_service =
-        common::storage::service::MinIOServiceImpl::new(state.minio_client.clone());
-    storage_service.store_context(&context).await.map_err(|e| {
-        tracing::error!(error = %e, "Failed to store Job Context to MinIO");
+    // 10. Store Job Context to PostgreSQL (with Redis cache)
+    // Requirements: 13.7 - Persist Job Context
+    state.storage_service.store_context(&context).await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to store Job Context");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse::new(

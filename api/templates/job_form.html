@@ -875,6 +875,12 @@
             radio.addEventListener('change', handleScheduleTypeChange);
         });
 
+        // Trigger initial state for the checked radio button
+        const checkedRadio = document.querySelector('input[name="schedule_type"]:checked');
+        if (checkedRadio) {
+            handleScheduleTypeChange({ target: checkedRadio });
+        }
+
         // Webhook trigger change handler
         document.getElementById('trigger-webhook').addEventListener('change', function () {
             document.getElementById('webhook-config').classList.toggle('hidden', !this.checked);

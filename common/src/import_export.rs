@@ -6,7 +6,7 @@ use crate::db::repositories::job::JobRepository;
 use crate::db::DbPool;
 use crate::errors::{DatabaseError, StorageError, ValidationError};
 use crate::models::{Job, JobStep, Schedule, TriggerConfig};
-use crate::storage::service::MinIOService;
+use crate::storage::StorageService;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -131,18 +131,18 @@ pub trait ImportExportService: Send + Sync {
 }
 
 /// Job import/export service implementation
-pub struct ImportExportServiceImpl<M: MinIOService> {
+pub struct ImportExportServiceImpl<S: StorageService> {
     db_pool: DbPool,
-    minio_service: M,
+    storage_service: S,
     system_version: String,
 }
 
-impl<M: MinIOService> ImportExportServiceImpl<M> {
+impl<S: StorageService> ImportExportServiceImpl<S> {
     /// Create a new import/export service instance
-    pub fn new(db_pool: DbPool, minio_service: M, system_version: String) -> Self {
+    pub fn new(db_pool: DbPool, storage_service: S, system_version: String) -> Self {
         Self {
             db_pool,
-            minio_service,
+            storage_service,
             system_version,
         }
     }
@@ -220,7 +220,7 @@ impl<M: MinIOService> ImportExportServiceImpl<M> {
 }
 
 #[async_trait]
-impl<M: MinIOService> ImportExportService for ImportExportServiceImpl<M> {
+impl<S: StorageService> ImportExportService for ImportExportServiceImpl<S> {
     #[instrument(skip(self), fields(job_id = %job_id, exported_by = %exported_by))]
     async fn export_job(
         &self,
@@ -235,7 +235,7 @@ impl<M: MinIOService> ImportExportService for ImportExportServiceImpl<M> {
             .await?
             .ok_or_else(|| ImportExportError::NotFound(format!("Job not found: {}", job_id)))?;
 
-        let definition_json = self.minio_service.load_job_definition(job_id).await?;
+        let definition_json = self.storage_service.load_job_definition(job_id).await?;
         let mut job_definition: serde_json::Value = serde_json::from_str(&definition_json)?;
 
         Self::mask_sensitive_data_recursive(&mut job_definition);
@@ -365,9 +365,8 @@ impl<M: MinIOService> ImportExportService for ImportExportServiceImpl<M> {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let minio_path = format!("jobs/{}/definition.json", job_id);
         let definition_json = serde_json::to_string_pretty(&job_definition)?;
-        self.minio_service
+        self.storage_service
             .store_job_definition(job_id, &definition_json)
             .await?;
 
@@ -383,7 +382,7 @@ impl<M: MinIOService> ImportExportService for ImportExportServiceImpl<M> {
             timeout_seconds,
             max_retries,
             allow_concurrent,
-            minio_definition_path: minio_path,
+            definition: Some(job_definition.clone()),
             created_at: now,
             updated_at: now,
         };
@@ -580,21 +579,21 @@ impl<M: MinIOService> ImportExportService for ImportExportServiceImpl<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::service::MinIOServiceImpl;
+    use crate::storage::service::StorageServiceImpl;
 
     #[test]
     fn test_export_filename_format() {
         let filename =
-            ImportExportServiceImpl::<MinIOServiceImpl>::generate_export_filename("test-job");
+            ImportExportServiceImpl::<StorageServiceImpl>::generate_export_filename("test-job");
         assert!(filename.starts_with("job-test-job-"));
         assert!(filename.ends_with(".json"));
     }
 
     #[test]
     fn test_is_sensitive_field() {
-        assert!(ImportExportServiceImpl::<MinIOServiceImpl>::is_sensitive_field("password"));
-        assert!(ImportExportServiceImpl::<MinIOServiceImpl>::is_sensitive_field("api_key"));
-        assert!(!ImportExportServiceImpl::<MinIOServiceImpl>::is_sensitive_field("name"));
+        assert!(ImportExportServiceImpl::<StorageServiceImpl>::is_sensitive_field("password"));
+        assert!(ImportExportServiceImpl::<StorageServiceImpl>::is_sensitive_field("api_key"));
+        assert!(!ImportExportServiceImpl::<StorageServiceImpl>::is_sensitive_field("name"));
     }
 
     #[test]
@@ -611,7 +610,7 @@ mod tests {
             }]
         });
 
-        ImportExportServiceImpl::<MinIOServiceImpl>::mask_sensitive_data(&mut job_def);
+        ImportExportServiceImpl::<StorageServiceImpl>::mask_sensitive_data(&mut job_def);
 
         let password = job_def["steps"][0]["auth"]["password"].as_str().unwrap();
         assert_eq!(password, SENSITIVE_DATA_PLACEHOLDER);
@@ -628,7 +627,7 @@ mod tests {
             }]
         });
 
-        let result = ImportExportServiceImpl::<MinIOServiceImpl>::validate_job_definition(&job_def);
+        let result = ImportExportServiceImpl::<StorageServiceImpl>::validate_job_definition(&job_def);
         assert!(result.is_ok());
     }
 }

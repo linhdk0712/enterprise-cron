@@ -8,46 +8,10 @@ use crate::handlers::ErrorResponse;
 use crate::state::AppState;
 use crate::templates::TEMPLATES;
 use super::ExecutionQueryParams;
-
-/// Helper function to extract schedule type from job
-fn get_schedule_type(schedule: &Option<common::models::Schedule>) -> Option<&'static str> {
-    schedule.as_ref().map(|s| match s {
-        common::models::Schedule::Cron { .. } => "Cron",
-        common::models::Schedule::FixedDelay { .. } => "FixedDelay",
-        common::models::Schedule::FixedRate { .. } => "FixedRate",
-        common::models::Schedule::OneTime { .. } => "OneTime",
-    })
-}
-
-/// Helper function to calculate next run time
-fn get_next_run_time(schedule: &Option<common::models::Schedule>, enabled: bool) -> Option<String> {
-    if !enabled {
-        return None;
-    }
-    
-    schedule.as_ref().and_then(|s| match s {
-        common::models::Schedule::Cron { .. } => Some("Scheduled".to_string()),
-        common::models::Schedule::FixedDelay { delay_seconds } => {
-            Some(format!("Every {}s", delay_seconds))
-        },
-        common::models::Schedule::FixedRate { interval_seconds } => {
-            Some(format!("Every {}s", interval_seconds))
-        },
-        common::models::Schedule::OneTime { execute_at } => {
-            Some(execute_at.format("%Y-%m-%d %H:%M:%S").to_string())
-        },
-    })
-}
-
-/// Helper function to get job type from steps
-fn get_job_type(steps: &[common::models::JobStep]) -> Option<&'static str> {
-    steps.first().map(|step| match &step.step_type {
-        common::models::JobType::HttpRequest { .. } => "HTTP",
-        common::models::JobType::DatabaseQuery { .. } => "Database",
-        common::models::JobType::Sftp { .. } => "SFTP",
-        common::models::JobType::FileProcessing { .. } => "File",
-    })
-}
+use super::shared_utils::{
+    load_job_from_storage, get_schedule_type_str, get_next_run_display, get_job_type_str,
+    setup_htmx_context, calculate_pagination,
+};
 
 /// Jobs list partial (HTMX)
 #[tracing::instrument(skip(state, headers))]
@@ -59,12 +23,8 @@ pub async fn jobs_partial(
     let mut context = Context::new();
     context.insert("active_page", "jobs");
 
-    let is_htmx = headers.get("HX-Request").is_some();
-    context.insert("is_htmx", &is_htmx);
-
     let limit = params.limit.unwrap_or(20);
     let offset = params.offset.unwrap_or(0);
-    let page = (offset / limit) + 1;
 
     // Fetch jobs with pagination
     let job_repo = common::db::repositories::JobRepository::new(state.db_pool.clone());
@@ -80,28 +40,14 @@ pub async fn jobs_partial(
     let mut jobs_json: Vec<serde_json::Value> = Vec::new();
     
     for job in paginated_jobs {
-        // Load full job definition from MinIO
-        let (schedule_type, next_run_time, job_type) = if !job.minio_definition_path.is_empty() {
-            match state.minio_client.get_object(&job.minio_definition_path).await {
-                Ok(data) => {
-                    match serde_json::from_slice::<common::models::Job>(&data) {
-                        Ok(full_job) => {
-                            let sched_type = get_schedule_type(&full_job.schedule);
-                            let next_run = get_next_run_time(&full_job.schedule, job.enabled);
-                            let jtype = get_job_type(&full_job.steps);
-                            (sched_type, next_run, jtype)
-                        },
-                        Err(e) => {
-                            tracing::warn!(job_id = %job.id, error = %e, "Failed to parse job definition");
-                            (None, None, None)
-                        }
-                    }
-                },
-                Err(e) => {
-                    tracing::warn!(job_id = %job.id, error = %e, "Failed to load job definition from MinIO");
-                    (None, None, None)
-                }
-            }
+        // Load full job definition from storage (Redis cache → PostgreSQL) using shared utility
+        let (schedule_type, next_run_time, job_type) = if let Some(full_job) = 
+            load_job_from_storage(state.storage_service.as_ref(), job.id).await 
+        {
+            let sched_type = get_schedule_type_str(&full_job.schedule);
+            let next_run = get_next_run_display(&full_job.schedule, job.enabled);
+            let jtype = get_job_type_str(&full_job.steps);
+            (sched_type, next_run, jtype)
         } else {
             (None, None, None)
         };
@@ -131,9 +77,9 @@ pub async fn jobs_partial(
         }));
     }
 
-    // Update total_count to use actual count
+    // Calculate pagination using shared utility
     let total_count = total_jobs;
-    let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i64;
+    let (page, total_pages) = calculate_pagination(offset, limit, total_count);
     
     context.insert("jobs", &jobs_json);
     context.insert("limit", &limit);
@@ -142,13 +88,8 @@ pub async fn jobs_partial(
     context.insert("total_pages", &total_pages);
     context.insert("total_count", &total_count);
 
-    // If HTMX request, return only the content partial
-    // Otherwise, return the full page with layout
-    let template = if is_htmx {
-        "_jobs_content.html"
-    } else {
-        "jobs.html"
-    };
+    // Setup HTMX context and determine template using shared utility
+    let template = setup_htmx_context(&mut context, &headers, "_jobs_content.html", "jobs.html");
 
     let html = TEMPLATES
         .render(template, &context)

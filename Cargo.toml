@@ -29,7 +29,6 @@ time = "0.3"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
 redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 async-nats = "0.35"
-rust-s3 = { version = "0.34", default-features = false, features = ["tokio-rustls-tls"] }
 
 # Database drivers
 mysql_async = "0.34"

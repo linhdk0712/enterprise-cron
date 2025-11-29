@@ -46,7 +46,6 @@ reqwest.workspace = true
 mysql_async.workspace = true
 oracle.workspace = true
 axum.workspace = true
-rust-s3.workspace = true
 calamine.workspace = true
 rust_xlsxwriter.workspace = true
 csv.workspace = true

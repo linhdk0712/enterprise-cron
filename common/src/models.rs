@@ -42,7 +42,8 @@ pub struct Job {
     pub timeout_seconds: i32,
     pub max_retries: i32,
     pub allow_concurrent: bool,
-    pub minio_definition_path: String,
+    #[sqlx(json)]
+    pub definition: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -274,13 +275,150 @@ pub struct JobExecution {
     pub attempt: i32,
     #[sqlx(try_from = "String")]
     pub trigger_source: TriggerSource,
+    #[sqlx(default, json)]
+    pub trigger_metadata: Option<serde_json::Value>,
     pub current_step: Option<String>,
-    pub minio_context_path: String,
+    #[sqlx(json)]
+    pub context: serde_json::Value,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub result: Option<String>,
     pub error: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+impl JobExecution {
+    /// Create a new pending execution for scheduled trigger
+    ///
+    /// Requirements: 3.12, 4.3 - Create execution with idempotency key
+    ///
+    /// # Arguments
+    /// * `job_id` - The job ID to execute
+    /// * `idempotency_key` - Unique key for deduplication
+    ///
+    /// # Returns
+    /// A new JobExecution in Pending status with Scheduled trigger source
+    pub fn new_scheduled(job_id: Uuid, idempotency_key: String) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            job_id,
+            idempotency_key,
+            status: ExecutionStatus::Pending,
+            attempt: 1,
+            trigger_source: TriggerSource::Scheduled,
+            trigger_metadata: None,
+            current_step: None,
+            context: serde_json::json!({}),
+            started_at: None,
+            completed_at: None,
+            result: None,
+            error: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a new pending execution for manual trigger
+    ///
+    /// Requirements: 6.4, 17.9 - Manual job triggering
+    ///
+    /// # Arguments
+    /// * `job_id` - The job ID to execute
+    /// * `user_id` - The user who triggered the job
+    ///
+    /// # Returns
+    /// A new JobExecution in Pending status with Manual trigger source
+    pub fn new_manual(job_id: Uuid, user_id: String) -> Self {
+        let execution_id = Uuid::new_v4();
+        let idempotency_key = format!("manual-{}-{}", job_id, execution_id);
+
+        Self {
+            id: execution_id,
+            job_id,
+            idempotency_key,
+            status: ExecutionStatus::Pending,
+            attempt: 1,
+            trigger_source: TriggerSource::Manual { user_id },
+            trigger_metadata: None,
+            current_step: None,
+            context: serde_json::json!({}),
+            started_at: None,
+            completed_at: None,
+            result: None,
+            error: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a new pending execution for webhook trigger
+    ///
+    /// Requirements: 16.1, 16.9 - Webhook-triggered job execution
+    ///
+    /// # Arguments
+    /// * `job_id` - The job ID to execute
+    /// * `webhook_url` - The webhook URL that triggered the job
+    /// * `webhook_data` - Optional webhook payload and metadata
+    ///
+    /// # Returns
+    /// A new JobExecution in Pending status with Webhook trigger source
+    pub fn new_webhook(
+        job_id: Uuid,
+        webhook_url: String,
+        webhook_data: Option<serde_json::Value>,
+    ) -> Self {
+        let execution_id = Uuid::new_v4();
+        let idempotency_key = format!("webhook-{}-{}", job_id, execution_id);
+
+        Self {
+            id: execution_id,
+            job_id,
+            idempotency_key,
+            status: ExecutionStatus::Pending,
+            attempt: 1,
+            trigger_source: TriggerSource::Webhook { webhook_url },
+            trigger_metadata: webhook_data,
+            current_step: None,
+            context: serde_json::json!({}),
+            started_at: None,
+            completed_at: None,
+            result: None,
+            error: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a new execution with custom parameters (for advanced use cases)
+    ///
+    /// # Arguments
+    /// * `job_id` - The job ID to execute
+    /// * `idempotency_key` - Unique key for deduplication
+    /// * `trigger_source` - How the job was triggered
+    /// * `attempt` - Attempt number (default: 1)
+    ///
+    /// # Returns
+    /// A new JobExecution with specified parameters
+    pub fn new_with_params(
+        job_id: Uuid,
+        idempotency_key: String,
+        trigger_source: TriggerSource,
+        attempt: i32,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            job_id,
+            idempotency_key,
+            status: ExecutionStatus::Pending,
+            attempt,
+            trigger_source,
+            trigger_metadata: None,
+            current_step: None,
+            context: serde_json::json!({}),
+            started_at: None,
+            completed_at: None,
+            result: None,
+            error: None,
+            created_at: Utc::now(),
+        }
+    }
 }
 
 /// ExecutionStatus represents the status of a job execution

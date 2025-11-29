@@ -11,7 +11,7 @@ use crate::state::{AppState, SseEvent};
 use common::db::repositories::execution::ExecutionRepository;
 use common::db::repositories::job::JobRepository;
 use common::models::{
-    ExecutionStatus, Job, JobExecution, JobStep, Schedule, TriggerConfig, TriggerSource,
+    Job, JobExecution, JobStep, Schedule, TriggerConfig,
 };
 
 /// Request to create a new job
@@ -90,8 +90,7 @@ pub async fn create_job(
         "allow_concurrent": req.allow_concurrent.unwrap_or(false),
     });
 
-    // Store job definition in MinIO
-    let minio_path = format!("jobs/{}/definition.json", job_id);
+    // Store job definition in PostgreSQL
     let definition_json = serde_json::to_string_pretty(&job_definition).map_err(|e| {
         ErrorResponse::new(
             "serialization_error",
@@ -99,16 +98,12 @@ pub async fn create_job(
         )
     })?;
 
-    state
-        .minio_client
-        .put_object(&minio_path, definition_json.as_bytes())
-        .await
-        .map_err(|e| {
-            ErrorResponse::new(
-                "storage_error",
-                &format!("Failed to store job definition in MinIO: {}", e),
-            )
-        })?;
+    let definition_value: serde_json::Value = serde_json::from_str(&definition_json).map_err(|e| {
+        ErrorResponse::new(
+            "serialization_error",
+            &format!("Failed to parse job definition: {}", e),
+        )
+    })?;
 
     // Create job record in database
     let job = Job {
@@ -122,7 +117,7 @@ pub async fn create_job(
         timeout_seconds: req.timeout_seconds.unwrap_or(300),
         max_retries: req.max_retries.unwrap_or(10),
         allow_concurrent: req.allow_concurrent.unwrap_or(false),
-        minio_definition_path: minio_path,
+        definition: Some(definition_value),
         created_at: now,
         updated_at: now,
     };
@@ -229,25 +224,29 @@ pub async fn get_job(
         .map_err(|e| ErrorResponse::new("database_error", &format!("Failed to fetch job: {}", e)))?
         .ok_or_else(|| ErrorResponse::new("not_found", &format!("Job not found: {}", id)))?;
 
-    // Load full job definition from MinIO to get schedule and steps
-    let definition_json = state
-        .minio_client
-        .get_object(&job.minio_definition_path)
-        .await
-        .map_err(|e| {
-            ErrorResponse::new(
-                "storage_error",
-                &format!("Failed to load job definition from MinIO: {}", e),
-            )
-        })?;
+    // Load full job definition from PostgreSQL to get schedule and steps
+    let job_definition: serde_json::Value = if let Some(def) = &job.definition {
+        def.clone()
+    } else {
+        // Fallback: try to load from storage service
+        let definition_json = state
+            .storage_service
+            .load_job_definition(job.id)
+            .await
+            .map_err(|e| {
+                ErrorResponse::new(
+                    "storage_error",
+                    &format!("Failed to load job definition: {}", e),
+                )
+            })?;
 
-    let job_definition: serde_json::Value =
-        serde_json::from_slice(&definition_json).map_err(|e| {
+        serde_json::from_str(&definition_json).map_err(|e| {
             ErrorResponse::new(
                 "deserialization_error",
                 &format!("Failed to parse job definition: {}", e),
             )
-        })?;
+        })?
+    };
 
     // Reconstruct full job with schedule and steps
     let mut full_job = job;
@@ -283,25 +282,29 @@ pub async fn update_job(
         .map_err(|e| ErrorResponse::new("database_error", &format!("Failed to fetch job: {}", e)))?
         .ok_or_else(|| ErrorResponse::new("not_found", &format!("Job not found: {}", id)))?;
 
-    // Load existing job definition from MinIO
-    let definition_json = state
-        .minio_client
-        .get_object(&job.minio_definition_path)
-        .await
-        .map_err(|e| {
-            ErrorResponse::new(
-                "storage_error",
-                &format!("Failed to load job definition from MinIO: {}", e),
-            )
-        })?;
+    // Load existing job definition from PostgreSQL
+    let mut job_definition: serde_json::Value = if let Some(def) = &job.definition {
+        def.clone()
+    } else {
+        // Fallback: try to load from storage service
+        let definition_json = state
+            .storage_service
+            .load_job_definition(job.id)
+            .await
+            .map_err(|e| {
+                ErrorResponse::new(
+                    "storage_error",
+                    &format!("Failed to load job definition: {}", e),
+                )
+            })?;
 
-    let mut job_definition: serde_json::Value =
-        serde_json::from_slice(&definition_json).map_err(|e| {
+        serde_json::from_str(&definition_json).map_err(|e| {
             ErrorResponse::new(
                 "deserialization_error",
                 &format!("Failed to parse job definition: {}", e),
             )
-        })?;
+        })?
+    };
 
     // Update fields if provided
     if let Some(name) = req.name {
@@ -360,30 +363,9 @@ pub async fn update_job(
     }
 
     job.updated_at = Utc::now();
+    job.definition = Some(job_definition.clone());
 
-    // Update job definition in MinIO
-    let updated_definition_json = serde_json::to_string_pretty(&job_definition).map_err(|e| {
-        ErrorResponse::new(
-            "serialization_error",
-            &format!("Failed to serialize updated job definition: {}", e),
-        )
-    })?;
-
-    state
-        .minio_client
-        .put_object(
-            &job.minio_definition_path,
-            updated_definition_json.as_bytes(),
-        )
-        .await
-        .map_err(|e| {
-            ErrorResponse::new(
-                "storage_error",
-                &format!("Failed to update job definition in MinIO: {}", e),
-            )
-        })?;
-
-    // Update job record in database
+    // Update job record in database (includes definition)
     repo.update(&job).await.map_err(|e| {
         ErrorResponse::new("database_error", &format!("Failed to update job: {}", e))
     })?;
@@ -408,26 +390,18 @@ pub async fn delete_job(
 ) -> Result<Json<SuccessResponse<()>>, ErrorResponse> {
     let repo = JobRepository::new(state.db_pool.clone());
 
-    // Get job to get MinIO path
-    let job = repo
+    // Get job to verify it exists
+    let _job = repo
         .find_by_id(id)
         .await
         .map_err(|e| ErrorResponse::new("database_error", &format!("Failed to fetch job: {}", e)))?
         .ok_or_else(|| ErrorResponse::new("not_found", &format!("Job not found: {}", id)))?;
 
     // Delete job from database (this will cascade delete executions and stats)
+    // Job definition is stored in PostgreSQL, so it will be deleted automatically
     repo.delete(id).await.map_err(|e| {
         ErrorResponse::new("database_error", &format!("Failed to delete job: {}", e))
     })?;
-
-    // Delete job definition from MinIO (best effort - don't fail if it doesn't exist)
-    if let Err(e) = state
-        .minio_client
-        .delete_object(&job.minio_definition_path)
-        .await
-    {
-        tracing::warn!(job_id = %id, error = %e, "Failed to delete job definition from MinIO");
-    }
 
     // Broadcast SSE event
     state.broadcast_event(SseEvent::JobDeleted { job_id: id });
@@ -478,28 +452,10 @@ pub async fn trigger_job(
         }
     }
 
-    // Create execution record
-    let execution_id = Uuid::new_v4();
-    let idempotency_key = format!("manual-{}-{}", id, execution_id);
-    let now = Utc::now();
-
-    let execution = JobExecution {
-        id: execution_id,
-        job_id: id,
-        idempotency_key: idempotency_key.clone(),
-        status: ExecutionStatus::Pending,
-        attempt: 1,
-        trigger_source: TriggerSource::Manual {
-            user_id: "system".to_string(), // TODO: Get from JWT claims in middleware
-        },
-        current_step: None,
-        minio_context_path: format!("jobs/{}/executions/{}/context.json", id, execution_id),
-        started_at: None,
-        completed_at: None,
-        result: None,
-        error: None,
-        created_at: now,
-    };
+    // Create execution record using factory method
+    // TODO: Get user_id from JWT claims in middleware
+    let execution = JobExecution::new_manual(id, "system".to_string());
+    let execution_id = execution.id;
 
     execution_repo.create(&execution).await.map_err(|e| {
         ErrorResponse::new(

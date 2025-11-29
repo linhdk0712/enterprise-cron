@@ -4,7 +4,7 @@
 
 use crate::errors::ExecutionError;
 use crate::models::{FileMetadata, JobContext, JobStep, JobType, SftpOperation, StepOutput};
-use crate::storage::MinIOService;
+use crate::storage::StorageService;
 use crate::worker::reference::ReferenceResolver;
 use chrono::Utc;
 use serde_json::Value;
@@ -17,11 +17,11 @@ use tracing::{debug, error, info, instrument};
 use super::connection::SftpConnection;
 
 /// Execute SFTP step
-#[instrument(skip(step, context, minio_service, reference_resolver))]
+#[instrument(skip(step, context, storage_service, reference_resolver))]
 pub async fn execute_sftp_step(
     step: &JobStep,
     context: &mut JobContext,
-    minio_service: &Arc<dyn MinIOService>,
+    storage_service: &Arc<dyn StorageService>,
     reference_resolver: &Arc<ReferenceResolver>,
     timeout_seconds: u64,
 ) -> Result<StepOutput, ExecutionError> {
@@ -57,7 +57,7 @@ pub async fn execute_sftp_step(
                 connection.session(),
                 remote_path,
                 context,
-                minio_service,
+                storage_service,
                 reference_resolver,
             )
             .await
@@ -69,7 +69,7 @@ pub async fn execute_sftp_step(
                 remote_path,
                 options.create_directories,
                 context,
-                minio_service,
+                storage_service,
                 reference_resolver,
             )
             .await
@@ -82,7 +82,7 @@ async fn download_operation(
     sess: &Session,
     remote_path: &str,
     context: &JobContext,
-    minio_service: &Arc<dyn MinIOService>,
+    storage_service: &Arc<dyn StorageService>,
     reference_resolver: &Arc<ReferenceResolver>,
 ) -> Result<StepOutput, ExecutionError> {
     let remote_path = reference_resolver.resolve(remote_path, context).unwrap_or_else(|_| remote_path.to_string());
@@ -124,30 +124,30 @@ async fn download_operation(
         .unwrap_or("unknown")
         .to_string();
 
-    // Store in MinIO
-    let minio_path = format!(
+    // Store in filesystem
+    let file_path = format!(
         "jobs/{}/executions/{}/sftp/downloads/{}",
         context.job_id, context.execution_id, filename
     );
 
-    minio_service
-        .store_file(&minio_path, &buffer)
+    storage_service
+        .store_file(&file_path, &buffer)
         .await
         .map_err(|e| {
-            error!(error = %e, minio_path = %minio_path, "Failed to store file in MinIO");
-            ExecutionError::StorageFailed(format!("Failed to store file in MinIO: {}", e))
+            error!(error = %e, file_path = %file_path, "Failed to store file");
+            ExecutionError::StorageFailed(format!("Failed to store file: {}", e))
         })?;
 
     info!(
         remote_path = %remote_path,
-        minio_path = %minio_path,
+        file_path = %file_path,
         size = buffer.len(),
         "File downloaded successfully"
     );
 
     // Create file metadata
     let metadata = FileMetadata {
-        path: minio_path.clone(),
+        path: file_path.clone(),
         filename: filename.clone(),
         size: buffer.len() as u64,
         mime_type: None,
@@ -161,7 +161,7 @@ async fn download_operation(
         output: Value::Object(serde_json::Map::from_iter(vec![
             ("operation".to_string(), Value::String("download".to_string())),
             ("remote_path".to_string(), Value::String(remote_path)),
-            ("local_path".to_string(), Value::String(minio_path)),
+            ("local_path".to_string(), Value::String(file_path)),
             ("bytes_transferred".to_string(), Value::Number(buffer.len().into())),
             ("file".to_string(), serde_json::to_value(&metadata).unwrap_or(Value::Null)),
         ])),
@@ -177,7 +177,7 @@ async fn upload_operation(
     remote_path: &str,
     create_remote_dirs: bool,
     context: &JobContext,
-    minio_service: &Arc<dyn MinIOService>,
+    storage_service: &Arc<dyn StorageService>,
     reference_resolver: &Arc<ReferenceResolver>,
 ) -> Result<StepOutput, ExecutionError> {
     let local_path = reference_resolver.resolve(local_path, context).unwrap_or_else(|_| local_path.to_string());
@@ -185,13 +185,13 @@ async fn upload_operation(
     
     info!(local_path = %local_path, remote_path = %remote_path, "Uploading file to SFTP");
 
-    // Load file from MinIO
-    let file_data = minio_service
+    // Load file from filesystem
+    let file_data = storage_service
         .load_file(&local_path)
         .await
         .map_err(|e| {
-            error!(error = %e, local_path = %local_path, "Failed to load file from MinIO");
-            ExecutionError::StorageFailed(format!("Failed to load file from MinIO: {}", e))
+            error!(error = %e, local_path = %local_path, "Failed to load file");
+            ExecutionError::StorageFailed(format!("Failed to load file: {}", e))
         })?;
 
     // Open SFTP channel
@@ -277,7 +277,7 @@ pub async fn download_file(
     sess: &Session,
     remote_path: &str,
     local_path: &str,
-    minio_service: &Arc<dyn MinIOService>,
+    storage_service: &Arc<dyn StorageService>,
 ) -> Result<FileMetadata, ExecutionError> {
     let sftp = sess.sftp().map_err(|e| {
         ExecutionError::SftpOperationFailed(format!("Failed to open SFTP channel: {}", e))
@@ -292,7 +292,7 @@ pub async fn download_file(
         ExecutionError::SftpOperationFailed(format!("Failed to read file: {}", e))
     })?;
 
-    minio_service
+    storage_service
         .store_file(local_path, &buffer)
         .await
         .map_err(|e| ExecutionError::StorageFailed(format!("Failed to store file: {}", e)))?;
@@ -316,9 +316,9 @@ pub async fn upload_file(
     sess: &Session,
     local_path: &str,
     remote_path: &str,
-    minio_service: &Arc<dyn MinIOService>,
+    storage_service: &Arc<dyn StorageService>,
 ) -> Result<(), ExecutionError> {
-    let file_data = minio_service
+    let file_data = storage_service
         .load_file(local_path)
         .await
         .map_err(|e| ExecutionError::StorageFailed(format!("Failed to load file: {}", e)))?;

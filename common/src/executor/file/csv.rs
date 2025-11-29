@@ -3,7 +3,7 @@
 
 use crate::errors::ExecutionError;
 use crate::models::{FileMetadata, FileProcessingOptions, JobContext};
-use crate::storage::service::MinIOService;
+use crate::storage::StorageService;
 use chrono::Utc;
 use csv::{ReaderBuilder, WriterBuilder};
 use serde_json::{json, Value};
@@ -12,17 +12,17 @@ use tracing::{info, instrument};
 
 /// CSV file processor
 pub struct CsvProcessor {
-    storage: Arc<dyn MinIOService>,
+    storage: Arc<dyn StorageService>,
 }
 
 impl CsvProcessor {
     /// Create a new CSV processor
-    pub fn new(storage: Arc<dyn MinIOService>) -> Self {
+    pub fn new(storage: Arc<dyn StorageService>) -> Self {
         Self { storage }
     }
 
     /// Read CSV file from MinIO and parse to JSON
-    #[instrument(skip(self, options))]
+    #[instrument(skip(self, _options, _context))]
     pub async fn read(
         &self,
         source_path: &str,

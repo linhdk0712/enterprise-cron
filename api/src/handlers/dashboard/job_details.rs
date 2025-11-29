@@ -2,27 +2,22 @@
 // Requirements: 6.3 - Display job details with execution history
 
 use axum::{extract::{Path, State}, http::HeaderMap, response::Html};
+use common::db::repositories::job::JobStats;
 use tera::Context;
 use uuid::Uuid;
 
 use crate::handlers::ErrorResponse;
 use crate::state::AppState;
 use crate::templates::TEMPLATES;
+use super::shared_utils::{get_schedule_type_str, load_job_from_storage};
 
 /// Prepare job data for template rendering
 fn prepare_job_data(
-    job: &common::db::models::JobMetadata,
+    job: &common::models::Job,
     full_job: Option<&common::models::Job>,
-    stats: Option<&common::db::models::JobStats>,
+    stats: Option<&JobStats>,
 ) -> serde_json::Value {
-    let schedule_type = full_job.and_then(|fj| {
-        fj.schedule.as_ref().map(|s| match s {
-            common::models::Schedule::Cron { .. } => "Cron",
-            common::models::Schedule::FixedDelay { .. } => "FixedDelay",
-            common::models::Schedule::FixedRate { .. } => "FixedRate",
-            common::models::Schedule::OneTime { .. } => "OneTime",
-        })
-    });
+    let schedule_type = full_job.and_then(|fj| get_schedule_type_str(&fj.schedule));
 
     let schedule_config = full_job.and_then(|fj| {
         fj.schedule.as_ref().map(|s| match s {
@@ -92,30 +87,7 @@ fn prepare_job_data(
     })
 }
 
-/// Load full job definition from MinIO
-async fn load_job_definition(
-    state: &AppState,
-    job_id: Uuid,
-    minio_path: &str,
-) -> Option<common::models::Job> {
-    if minio_path.is_empty() {
-        return None;
-    }
 
-    match state.minio_client.get_object(minio_path).await {
-        Ok(data) => match serde_json::from_slice::<common::models::Job>(&data) {
-            Ok(full_job) => Some(full_job),
-            Err(e) => {
-                tracing::warn!(job_id = %job_id, error = %e, "Failed to parse job definition from MinIO");
-                None
-            }
-        },
-        Err(e) => {
-            tracing::warn!(job_id = %job_id, error = %e, "Failed to load job definition from MinIO");
-            None
-        }
-    }
-}
 
 /// Job details modal content (HTMX)
 #[tracing::instrument(skip(state))]
@@ -139,8 +111,8 @@ pub async fn job_details_modal(
         .await
         .map_err(|e| ErrorResponse::new("database_error", &format!("Database error: {}", e)))?;
 
-    // Load full job definition from MinIO
-    let full_job = load_job_definition(&state, id, &job.minio_definition_path).await;
+    // Load full job definition from storage with Redis cache fallback
+    let full_job = load_job_from_storage(state.storage_service.as_ref(), id).await;
 
     // Prepare job data for template
     let job_data = prepare_job_data(&job, full_job.as_ref(), stats.as_ref());
@@ -184,8 +156,8 @@ pub async fn job_details_partial(
         .await
         .map_err(|e| ErrorResponse::new("database_error", &format!("Database error: {}", e)))?;
 
-    // Load full job definition from MinIO
-    let full_job = load_job_definition(&state, id, &job.minio_definition_path).await;
+    // Load full job definition from storage with Redis cache fallback
+    let full_job = load_job_from_storage(state.storage_service.as_ref(), id).await;
 
     // Prepare job data for template
     let job_data = prepare_job_data(&job, full_job.as_ref(), stats.as_ref());

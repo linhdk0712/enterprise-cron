@@ -1,0 +1,18 @@
+{
+  "enabled": true,
+  "name": "API Contract Synchronization Checker",
+  "description": "Monitors changes to API handlers and data models to verify that request/response structures between frontend and backend remain synchronized. When API response structures or handler signatures change, this hook triggers a review to ensure frontend code can properly handle the updated data formats, preventing runtime errors from schema mismatches.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "api/src/handlers/**/*.rs",
+      "common/src/models.rs",
+      "api/templates/**/*.html"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the changes in the API handlers, models, or templates to identify potential request/response synchronization issues:\n\n1. **Backend Changes Analysis:**\n   - Review modified handler functions for response structure changes\n   - Check model struct changes (added/removed/renamed fields)\n   - Identify changes to serialization formats (JSON structure)\n   - Note any changes to HTTP status codes or error responses\n\n2. **Frontend Impact Assessment:**\n   - Identify which HTMX templates consume the modified endpoints\n   - Check if JavaScript code expects specific response fields\n   - Verify template variables match the new response structure\n   - Look for hardcoded field names that may break\n\n3. **Synchronization Verification:**\n   - Compare request DTOs with form data in templates\n   - Verify response DTOs match template expectations\n   - Check error handling matches new error response formats\n   - Ensure status codes are handled correctly in frontend\n\n4. **Recommendations:**\n   - List specific files that need frontend updates\n   - Suggest test cases to verify synchronization\n   - Recommend API versioning if breaking changes detected\n   - Propose migration strategy if needed\n\nFocus on preventing these common issues:\n- Frontend expecting fields that no longer exist in backend response\n- Backend returning new required fields that frontend doesn't handle\n- Type mismatches (string vs number, null vs undefined)\n- Missing error handling for new error response formats\n- Pagination/filtering parameters out of sync"
+  }
+}

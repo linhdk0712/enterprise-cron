@@ -173,6 +173,15 @@ pub enum StorageError {
     #[error("MinIO error: {0}")]
     MinioError(String),
 
+    #[error("Filesystem error: {0}")]
+    FileSystemError(String),
+
+    #[error("Invalid JSON: {0}")]
+    InvalidJson(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
+
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
 
