@@ -245,16 +245,20 @@ pub async fn handle_webhook(
 
     // 10. Store Job Context to PostgreSQL (with Redis cache)
     // Requirements: 13.7 - Persist Job Context
-    state.storage_service.store_context(&context).await.map_err(|e| {
-        tracing::error!(error = %e, "Failed to store Job Context");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(
-                "internal_error",
-                "Failed to store job context",
-            )),
-        )
-    })?;
+    state
+        .storage_service
+        .store_context(&context)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to store Job Context");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "internal_error",
+                    "Failed to store job context",
+                )),
+            )
+        })?;
 
     // 11. Save execution to database
     let execution_repo = ExecutionRepository::new(state.db_pool.clone());

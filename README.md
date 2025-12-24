@@ -106,6 +106,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install sqlx-cli --no-default-features --features postgres
 ```
 
+**Lưu ý cho macOS Apple Silicon:** Nếu gặp lỗi build, xem [README-MACOS.md](README-MACOS.md)
+
 ### 3. Khởi Động Services với Docker Compose
 
 ```bash
@@ -347,6 +349,14 @@ cargo build --release --bin api
 
 # Binaries sẽ ở trong target/release/
 ```
+
+**Lưu ý cho macOS Apple Silicon (M1/M2/M3):**
+
+Nếu gặp lỗi LLVM crashes hoặc compiler panics trên macOS, xem [README-MACOS.md](README-MACOS.md) để biết:
+- Cấu hình Cargo tối ưu cho Apple Silicon
+- Build script tự động (`./build-macos.sh`)
+- Troubleshooting các lỗi thường gặp
+- Performance tips cho dev và release builds
 
 ### Chạy Development Mode
 
@@ -1070,6 +1080,7 @@ docker-compose logs api | grep "webhook"
 - [Migrations](migrations/README.md) - Database migrations
 - [Sequence Diagrams](.kiro/specs/vietnam-enterprise-cron/SEQUENCE-DIAGRAMS-README.md) - Sơ đồ luồng
 - [MinIO Removal Guide](CONSOLIDATED-MINIO-REMOVAL.md) - Migration từ MinIO sang PostgreSQL + Redis + Filesystem
+- [Rust to Golang Feasibility Analysis](RUST-TO-GOLANG-FEASIBILITY-ANALYSIS.md) - Phân tích khả năng chuyển đổi sang Golang
 
 ## 🔄 Migration Notes
 

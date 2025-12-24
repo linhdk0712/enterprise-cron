@@ -34,7 +34,9 @@
       "Bash(then)",
       "Bash(fi)",
       "Bash(done)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(RUST_MIN_STACK=16777216 cargo build:*)",
+      "Bash(SQLX_OFFLINE=true cargo build:*)"
     ],
     "deny": [],
     "ask": [

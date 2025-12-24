@@ -38,13 +38,17 @@ pub struct Job {
     pub steps: Vec<JobStep>,
     #[sqlx(skip)]
     pub triggers: TriggerConfig,
+    #[serde(default)]
     pub enabled: bool,
     pub timeout_seconds: i32,
     pub max_retries: i32,
+    #[serde(default)]
     pub allow_concurrent: bool,
     #[sqlx(json)]
     pub definition: Option<serde_json::Value>,
+    #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
+    #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -275,7 +279,6 @@ pub struct JobExecution {
     pub attempt: i32,
     #[sqlx(try_from = "String")]
     pub trigger_source: TriggerSource,
-    #[sqlx(default, json)]
     pub trigger_metadata: Option<serde_json::Value>,
     pub current_step: Option<String>,
     #[sqlx(json)]

@@ -627,7 +627,8 @@ mod tests {
             }]
         });
 
-        let result = ImportExportServiceImpl::<StorageServiceImpl>::validate_job_definition(&job_def);
+        let result =
+            ImportExportServiceImpl::<StorageServiceImpl>::validate_job_definition(&job_def);
         assert!(result.is_ok());
     }
 }

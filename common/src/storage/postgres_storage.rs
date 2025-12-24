@@ -18,7 +18,11 @@ use uuid::Uuid;
 #[async_trait]
 pub trait StorageService: Send + Sync {
     /// Store job definition to PostgreSQL
-    async fn store_job_definition(&self, job_id: Uuid, definition: &str) -> Result<(), StorageError>;
+    async fn store_job_definition(
+        &self,
+        job_id: Uuid,
+        definition: &str,
+    ) -> Result<(), StorageError>;
 
     /// Load job definition from PostgreSQL (with Redis cache)
     async fn load_job_definition(&self, job_id: Uuid) -> Result<String, StorageError>;
@@ -27,7 +31,11 @@ pub trait StorageService: Send + Sync {
     async fn store_context(&self, context: &JobContext) -> Result<(), StorageError>;
 
     /// Load job context from PostgreSQL (with Redis cache)
-    async fn load_context(&self, job_id: Uuid, execution_id: Uuid) -> Result<JobContext, StorageError>;
+    async fn load_context(
+        &self,
+        job_id: Uuid,
+        execution_id: Uuid,
+    ) -> Result<JobContext, StorageError>;
 
     /// Store file to filesystem
     async fn store_file(&self, path: &str, data: &[u8]) -> Result<String, StorageError>;
@@ -69,7 +77,11 @@ impl StorageServiceImpl {
             file_base_path = %file_base_path.display(),
             "Initializing storage service (PostgreSQL + Redis + Filesystem)"
         );
-        Self { db_pool, redis, file_base_path }
+        Self {
+            db_pool,
+            redis,
+            file_base_path,
+        }
     }
 
     fn redis_job_def_key(job_id: Uuid) -> String {
@@ -88,7 +100,11 @@ impl StorageServiceImpl {
 #[async_trait]
 impl StorageService for StorageServiceImpl {
     #[instrument(skip(self, definition), fields(job_id = %job_id, size = definition.len()))]
-    async fn store_job_definition(&self, job_id: Uuid, definition: &str) -> Result<(), StorageError> {
+    async fn store_job_definition(
+        &self,
+        job_id: Uuid,
+        definition: &str,
+    ) -> Result<(), StorageError> {
         debug!(job_id = %job_id, "Storing job definition to PostgreSQL");
 
         // Validate JSON
@@ -115,7 +131,10 @@ impl StorageService for StorageServiceImpl {
         // Cache in Redis
         let redis_key = Self::redis_job_def_key(job_id);
         let mut redis_conn = (*self.redis).clone();
-        if let Err(e) = redis_conn.set_ex::<_, _, ()>(&redis_key, definition, JOB_DEF_TTL as u64).await {
+        if let Err(e) = redis_conn
+            .set_ex::<_, _, ()>(&redis_key, definition, JOB_DEF_TTL as u64)
+            .await
+        {
             warn!(error = %e, job_id = %job_id, "Failed to cache in Redis");
         }
 
@@ -164,7 +183,10 @@ impl StorageService for StorageServiceImpl {
 
         // Cache in Redis
         let mut redis_conn = (*self.redis).clone();
-        if let Err(e) = redis_conn.set_ex::<_, _, ()>(&redis_key, &definition, JOB_DEF_TTL as u64).await {
+        if let Err(e) = redis_conn
+            .set_ex::<_, _, ()>(&redis_key, &definition, JOB_DEF_TTL as u64)
+            .await
+        {
             warn!(error = %e, job_id = %job_id, "Failed to cache in Redis");
         }
 
@@ -198,9 +220,13 @@ impl StorageService for StorageServiceImpl {
 
         // Cache in Redis
         let redis_key = Self::redis_job_ctx_key(context.job_id, context.execution_id);
-        let json_str = serde_json::to_string(context).map_err(|e| StorageError::InvalidJson(e.to_string()))?;
+        let json_str =
+            serde_json::to_string(context).map_err(|e| StorageError::InvalidJson(e.to_string()))?;
         let mut redis_conn = (*self.redis).clone();
-        if let Err(e) = redis_conn.set_ex::<_, _, ()>(&redis_key, &json_str, JOB_CTX_TTL as u64).await {
+        if let Err(e) = redis_conn
+            .set_ex::<_, _, ()>(&redis_key, &json_str, JOB_CTX_TTL as u64)
+            .await
+        {
             warn!(error = %e, "Failed to cache context in Redis");
         }
 
@@ -208,7 +234,11 @@ impl StorageService for StorageServiceImpl {
     }
 
     #[instrument(skip(self), fields(job_id = %job_id, execution_id = %execution_id))]
-    async fn load_context(&self, job_id: Uuid, execution_id: Uuid) -> Result<JobContext, StorageError> {
+    async fn load_context(
+        &self,
+        job_id: Uuid,
+        execution_id: Uuid,
+    ) -> Result<JobContext, StorageError> {
         debug!(job_id = %job_id, execution_id = %execution_id, "Loading context");
 
         let redis_key = Self::redis_job_ctx_key(job_id, execution_id);
@@ -227,21 +257,29 @@ impl StorageService for StorageServiceImpl {
         }
 
         // Query PostgreSQL
-        let row = sqlx::query!("SELECT context FROM job_executions WHERE id = $1", execution_id)
-            .fetch_optional(&self.db_pool)
-            .await
-            .map_err(|e| StorageError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| StorageError::NotFound(format!("Execution {} not found", execution_id)))?;
+        let row = sqlx::query!(
+            "SELECT context FROM job_executions WHERE id = $1",
+            execution_id
+        )
+        .fetch_optional(&self.db_pool)
+        .await
+        .map_err(|e| StorageError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| StorageError::NotFound(format!("Execution {} not found", execution_id)))?;
 
-        let context_value = row.context
-            .ok_or_else(|| StorageError::NotFound(format!("Context for execution {} not found", execution_id)))?;
+        let context_value = row.context.ok_or_else(|| {
+            StorageError::NotFound(format!("Context for execution {} not found", execution_id))
+        })?;
         let context: JobContext = serde_json::from_value(context_value)
             .map_err(|e| StorageError::InvalidJson(e.to_string()))?;
 
         // Cache in Redis
-        let json_str = serde_json::to_string(&context).map_err(|e| StorageError::InvalidJson(e.to_string()))?;
+        let json_str = serde_json::to_string(&context)
+            .map_err(|e| StorageError::InvalidJson(e.to_string()))?;
         let mut redis_conn = (*self.redis).clone();
-        if let Err(e) = redis_conn.set_ex::<_, _, ()>(&redis_key, &json_str, JOB_CTX_TTL as u64).await {
+        if let Err(e) = redis_conn
+            .set_ex::<_, _, ()>(&redis_key, &json_str, JOB_CTX_TTL as u64)
+            .await
+        {
             warn!(error = %e, "Failed to cache in Redis");
         }
 
@@ -307,9 +345,11 @@ impl StorageService for StorageServiceImpl {
             StorageError::FileSystemError(e.to_string())
         })?;
 
-        while let Some(entry) = entries.next_entry().await.map_err(|e| {
-            StorageError::FileSystemError(e.to_string())
-        })? {
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| StorageError::FileSystemError(e.to_string()))?
+        {
             if let Ok(file_name) = entry.file_name().into_string() {
                 files.push(format!("{}/{}", prefix, file_name));
             }
@@ -323,7 +363,11 @@ impl StorageService for StorageServiceImpl {
 // Implement StorageService for Arc<dyn StorageService> to allow using it with generic types
 #[async_trait]
 impl StorageService for Arc<dyn StorageService> {
-    async fn store_job_definition(&self, job_id: Uuid, definition: &str) -> Result<(), StorageError> {
+    async fn store_job_definition(
+        &self,
+        job_id: Uuid,
+        definition: &str,
+    ) -> Result<(), StorageError> {
         (**self).store_job_definition(job_id, definition).await
     }
 
@@ -335,7 +379,11 @@ impl StorageService for Arc<dyn StorageService> {
         (**self).store_context(context).await
     }
 
-    async fn load_context(&self, job_id: Uuid, execution_id: Uuid) -> Result<JobContext, StorageError> {
+    async fn load_context(
+        &self,
+        job_id: Uuid,
+        execution_id: Uuid,
+    ) -> Result<JobContext, StorageError> {
         (**self).load_context(job_id, execution_id).await
     }
 

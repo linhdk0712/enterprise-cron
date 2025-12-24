@@ -90,10 +90,13 @@ impl JobProcessor {
             error!(error = %e, "Failed to update execution status to Running");
         }
 
-        self.publish_status_change(execution.id, execution.job_id, "running").await;
+        self.publish_status_change(execution.id, execution.job_id, "running")
+            .await;
 
         // Initialize or load job context
-        let mut context = self.load_or_initialize_context(&job_definition, &execution).await?;
+        let mut context = self
+            .load_or_initialize_context(&job_definition, &execution)
+            .await?;
 
         // Execute job steps
         let step_executor = StepExecutor::new(
@@ -112,7 +115,9 @@ impl JobProcessor {
             .await;
 
         // Update final execution status
-        let final_status = self.finalize_execution(&mut execution, execution_result).await;
+        let final_status = self
+            .finalize_execution(&mut execution, execution_result)
+            .await;
 
         // Save final context to storage
         if let Err(e) = self.storage_service.store_context(&context).await {
@@ -121,31 +126,34 @@ impl JobProcessor {
             info!("Final job context saved to storage successfully");
         }
 
-        self.publish_status_change(execution.id, execution.job_id, final_status).await;
+        self.publish_status_change(execution.id, execution.job_id, final_status)
+            .await;
 
         Ok(())
     }
 
     /// Check if job has already been executed (idempotency check)
     async fn check_idempotency(&self, job_message: &JobMessage) -> Result<bool, anyhow::Error> {
-        match self.execution_repo.find_by_idempotency_key(&job_message.idempotency_key).await {
-            Ok(Some(existing_execution)) => {
-                match existing_execution.status {
-                    ExecutionStatus::Success
-                    | ExecutionStatus::Failed
-                    | ExecutionStatus::Timeout
-                    | ExecutionStatus::DeadLetter
-                    | ExecutionStatus::Cancelled => {
-                        info!(
-                            existing_execution_id = %existing_execution.id,
-                            status = ?existing_execution.status,
-                            "Job already completed with this idempotency key, skipping"
-                        );
-                        Ok(true)
-                    }
-                    _ => Ok(false),
+        match self
+            .execution_repo
+            .find_by_idempotency_key(&job_message.idempotency_key)
+            .await
+        {
+            Ok(Some(existing_execution)) => match existing_execution.status {
+                ExecutionStatus::Success
+                | ExecutionStatus::Failed
+                | ExecutionStatus::Timeout
+                | ExecutionStatus::DeadLetter
+                | ExecutionStatus::Cancelled => {
+                    info!(
+                        existing_execution_id = %existing_execution.id,
+                        status = ?existing_execution.status,
+                        "Job already completed with this idempotency key, skipping"
+                    );
+                    Ok(true)
                 }
-            }
+                _ => Ok(false),
+            },
             Ok(None) => {
                 info!("No existing execution found, proceeding with job execution");
                 Ok(false)
@@ -179,11 +187,18 @@ impl JobProcessor {
         );
 
         // Load full job definition from storage
-        let job_definition_json = match self.storage_service.load_job_definition(job_message.job_id).await {
+        let job_definition_json = match self
+            .storage_service
+            .load_job_definition(job_message.job_id)
+            .await
+        {
             Ok(json) => json,
             Err(e) => {
                 error!(error = %e, "Failed to load job definition from storage");
-                return Err(anyhow::anyhow!("Failed to load job definition from storage: {}", e));
+                return Err(anyhow::anyhow!(
+                    "Failed to load job definition from storage: {}",
+                    e
+                ));
             }
         };
 
@@ -206,8 +221,15 @@ impl JobProcessor {
     }
 
     /// Create new or load existing execution record
-    async fn create_or_load_execution(&self, job_message: &JobMessage) -> Result<JobExecution, anyhow::Error> {
-        match self.execution_repo.find_by_id(job_message.execution_id).await {
+    async fn create_or_load_execution(
+        &self,
+        job_message: &JobMessage,
+    ) -> Result<JobExecution, anyhow::Error> {
+        match self
+            .execution_repo
+            .find_by_id(job_message.execution_id)
+            .await
+        {
             Ok(Some(exec)) => Ok(exec),
             Ok(None) => {
                 // Create new execution using factory method
@@ -217,13 +239,15 @@ impl JobProcessor {
                     TriggerSource::Scheduled,
                     job_message.attempt,
                 );
-                
+
                 // Override ID to match the message (important for consistency)
                 new_execution.id = job_message.execution_id;
                 new_execution.status = ExecutionStatus::Running;
                 new_execution.started_at = Some(Utc::now());
 
-                self.execution_repo.create(&new_execution).await
+                self.execution_repo
+                    .create(&new_execution)
+                    .await
                     .map_err(|e| anyhow::anyhow!("Failed to create execution: {}", e))?;
 
                 Ok(new_execution)
@@ -236,10 +260,21 @@ impl JobProcessor {
     }
 
     /// Load existing context or initialize new one
-    async fn load_or_initialize_context(&self, job: &Job, execution: &JobExecution) -> Result<JobContext, anyhow::Error> {
-        match self.storage_service.load_context(job.id, execution.id).await {
+    async fn load_or_initialize_context(
+        &self,
+        job: &Job,
+        execution: &JobExecution,
+    ) -> Result<JobContext, anyhow::Error> {
+        match self
+            .storage_service
+            .load_context(job.id, execution.id)
+            .await
+        {
             Ok(ctx) => {
-                info!(steps_completed = ctx.steps.len(), "Loaded existing job context from storage");
+                info!(
+                    steps_completed = ctx.steps.len(),
+                    "Loaded existing job context from storage"
+                );
                 Ok(ctx)
             }
             Err(_) => {
@@ -250,7 +285,11 @@ impl JobProcessor {
     }
 
     /// Finalize execution with result
-    async fn finalize_execution(&self, execution: &mut JobExecution, result: Result<(), anyhow::Error>) -> &'static str {
+    async fn finalize_execution(
+        &self,
+        execution: &mut JobExecution,
+        result: Result<(), anyhow::Error>,
+    ) -> &'static str {
         let final_status = match &result {
             Ok(()) => {
                 info!("Job execution completed successfully");
@@ -276,7 +315,12 @@ impl JobProcessor {
     }
 
     /// Publish execution status change event to NATS for SSE broadcasting
-    async fn publish_status_change(&self, execution_id: uuid::Uuid, job_id: uuid::Uuid, status: &str) {
+    async fn publish_status_change(
+        &self,
+        execution_id: uuid::Uuid,
+        job_id: uuid::Uuid,
+        status: &str,
+    ) {
         if let Some(client) = &self.nats_client {
             let event = serde_json::json!({
                 "type": "execution_status_changed",

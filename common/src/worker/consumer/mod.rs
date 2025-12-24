@@ -2,9 +2,9 @@
 // Requirements: 4.2, 4.3, 13.4, 13.7, 13.8
 // Tách theo RECC 2025 rules - Tách theo responsibility
 
+mod circuit_breaker_manager;
 mod job_processor;
 mod step_executor;
-mod circuit_breaker_manager;
 
 use crate::circuit_breaker::CircuitBreakerConfig;
 use crate::db::repositories::execution::ExecutionRepository;
@@ -20,9 +20,9 @@ use crate::worker::reference::ReferenceResolver;
 use std::sync::Arc;
 use tracing::{info, instrument};
 
+pub use circuit_breaker_manager::CircuitBreakerManager;
 pub use job_processor::JobProcessor;
 pub use step_executor::StepExecutor;
-pub use circuit_breaker_manager::CircuitBreakerManager;
 
 /// Worker job consumer that processes jobs from the queue
 #[allow(dead_code)]

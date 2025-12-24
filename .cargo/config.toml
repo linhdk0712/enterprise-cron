@@ -1,0 +1,28 @@
+# Rust build configuration for macOS Apple Silicon
+# Fixes LLVM codegen crashes and compiler panics
+
+[build]
+# Disable incremental compilation to avoid cache corruption
+incremental = false
+# Increase jobs to reduce memory pressure per job
+jobs = 4
+
+[target.aarch64-apple-darwin]
+# CRITICAL: Remove target-cpu=native to avoid LLVM crashes
+rustflags = [
+    "-C", "debuginfo=0",           # Disable debug info to reduce memory
+    "-C", "codegen-units=16",      # More codegen units = less memory per unit
+]
+
+[profile.dev]
+incremental = false
+opt-level = 0                      # No optimization in dev
+debug = false                      # Disable debug symbols
+codegen-units = 256                # Maximum parallelism, minimum memory
+
+[profile.release]
+incremental = false
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

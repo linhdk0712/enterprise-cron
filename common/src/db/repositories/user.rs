@@ -380,7 +380,6 @@ impl UserRepository {
 
 #[cfg(test)]
 mod tests {
-    
 
     #[test]
     fn test_user_repository_creation() {

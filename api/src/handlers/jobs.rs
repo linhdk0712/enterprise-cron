@@ -10,9 +10,7 @@ use crate::handlers::{ErrorResponse, SuccessResponse};
 use crate::state::{AppState, SseEvent};
 use common::db::repositories::execution::ExecutionRepository;
 use common::db::repositories::job::JobRepository;
-use common::models::{
-    Job, JobExecution, JobStep, Schedule, TriggerConfig,
-};
+use common::models::{Job, JobExecution, JobStep, Schedule, TriggerConfig};
 
 /// Request to create a new job
 #[derive(Debug, Deserialize)]
@@ -85,6 +83,7 @@ pub async fn create_job(
         "schedule": req.schedule,
         "steps": req.steps,
         "triggers": triggers,
+        "enabled": true,
         "timeout_seconds": req.timeout_seconds.unwrap_or(300),
         "max_retries": req.max_retries.unwrap_or(10),
         "allow_concurrent": req.allow_concurrent.unwrap_or(false),
@@ -98,12 +97,13 @@ pub async fn create_job(
         )
     })?;
 
-    let definition_value: serde_json::Value = serde_json::from_str(&definition_json).map_err(|e| {
-        ErrorResponse::new(
-            "serialization_error",
-            &format!("Failed to parse job definition: {}", e),
-        )
-    })?;
+    let definition_value: serde_json::Value =
+        serde_json::from_str(&definition_json).map_err(|e| {
+            ErrorResponse::new(
+                "serialization_error",
+                &format!("Failed to parse job definition: {}", e),
+            )
+        })?;
 
     // Create job record in database
     let job = Job {
@@ -362,6 +362,11 @@ pub async fn update_job(
         job_definition["allow_concurrent"] = serde_json::json!(allow_concurrent);
     }
 
+    // Ensure enabled field exists (for backwards compatibility with old jobs)
+    if job_definition.get("enabled").is_none() {
+        job_definition["enabled"] = serde_json::json!(job.enabled);
+    }
+
     job.updated_at = Utc::now();
     job.definition = Some(job_definition.clone());
 
@@ -522,7 +527,24 @@ pub async fn enable_job(
 ) -> Result<Json<SuccessResponse<()>>, ErrorResponse> {
     let repo = JobRepository::new(state.db_pool.clone());
 
-    repo.enable(id).await.map_err(|e| {
+    // Get the job to update its definition
+    let mut job = repo
+        .find_by_id(id)
+        .await
+        .map_err(|e| ErrorResponse::new("database_error", &format!("Failed to fetch job: {}", e)))?
+        .ok_or_else(|| ErrorResponse::new("not_found", &format!("Job not found: {}", id)))?;
+
+    // Update enabled flag
+    job.enabled = true;
+
+    // Update definition JSON if it exists
+    if let Some(mut definition) = job.definition {
+        definition["enabled"] = serde_json::json!(true);
+        job.definition = Some(definition);
+    }
+
+    // Save the updated job
+    repo.update(&job).await.map_err(|e| {
         ErrorResponse::new("database_error", &format!("Failed to enable job: {}", e))
     })?;
 
@@ -546,7 +568,24 @@ pub async fn disable_job(
 ) -> Result<Json<SuccessResponse<()>>, ErrorResponse> {
     let repo = JobRepository::new(state.db_pool.clone());
 
-    repo.disable(id).await.map_err(|e| {
+    // Get the job to update its definition
+    let mut job = repo
+        .find_by_id(id)
+        .await
+        .map_err(|e| ErrorResponse::new("database_error", &format!("Failed to fetch job: {}", e)))?
+        .ok_or_else(|| ErrorResponse::new("not_found", &format!("Job not found: {}", id)))?;
+
+    // Update enabled flag
+    job.enabled = false;
+
+    // Update definition JSON if it exists
+    if let Some(mut definition) = job.definition {
+        definition["enabled"] = serde_json::json!(false);
+        job.definition = Some(definition);
+    }
+
+    // Save the updated job
+    repo.update(&job).await.map_err(|e| {
         ErrorResponse::new("database_error", &format!("Failed to disable job: {}", e))
     })?;
 

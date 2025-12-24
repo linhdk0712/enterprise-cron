@@ -108,7 +108,6 @@ mod property_74_worker_component_isolation {
 
 #[cfg(test)]
 mod integration_tests {
-    
 
     #[test]
     fn test_worker_property_tests_compile() {

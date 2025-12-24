@@ -469,7 +469,6 @@ pub struct JobStats {
 
 #[cfg(test)]
 mod tests {
-    
 
     #[test]
     fn test_job_repository_creation() {

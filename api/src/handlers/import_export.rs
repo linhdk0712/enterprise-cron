@@ -90,7 +90,8 @@ pub async fn export_job(
         })?;
 
     // Generate filename
-    let filename = format!("job_export_{}_{}.json", 
+    let filename = format!(
+        "job_export_{}_{}.json",
         exported_job.name.replace(' ', "_"),
         chrono::Utc::now().format("%Y%m%d_%H%M%S")
     );

@@ -10,7 +10,6 @@ use crate::state::{AppState, SseEvent};
 use common::db::repositories::execution::{ExecutionFilter, ExecutionRepository};
 use common::models::{ExecutionStatus, JobExecution};
 
-
 /// Query parameters for listing executions
 ///
 /// # Requirements
@@ -86,8 +85,8 @@ pub async fn get_execution(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Html<String>, ErrorResponse> {
-    use tera::Context;
     use crate::templates::TEMPLATES;
+    use tera::Context;
 
     let repo = ExecutionRepository::new(state.db_pool.clone());
 
@@ -110,14 +109,18 @@ pub async fn get_execution(
     // Get job name
     let job_repo = common::db::repositories::JobRepository::new(state.db_pool.clone());
     let job = job_repo.find_by_id(execution.job_id).await.ok().flatten();
-    let job_name = job.as_ref().map(|j| j.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+    let job_name = job
+        .as_ref()
+        .map(|j| j.name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
 
     // Calculate duration
-    let duration_seconds = if let (Some(start), Some(end)) = (execution.started_at, execution.completed_at) {
-        Some((end - start).num_seconds())
-    } else {
-        None
-    };
+    let duration_seconds =
+        if let (Some(start), Some(end)) = (execution.started_at, execution.completed_at) {
+            Some((end - start).num_seconds())
+        } else {
+            None
+        };
 
     // Load JobContext from storage to get step outputs
     // Requirements: 13.8 - Load Job Context to display detailed step results
@@ -127,21 +130,27 @@ pub async fn get_execution(
             job_id = %execution.job_id,
             "Loading JobContext from storage"
         );
-        
+
         // Load context using Storage service (with Redis cache)
-        match state.storage_service.load_context(execution.job_id, execution.id).await {
+        match state
+            .storage_service
+            .load_context(execution.job_id, execution.id)
+            .await
+        {
             Ok(context) => {
                 tracing::info!(
                     execution_id = %id,
                     steps_count = context.steps.len(),
                     "JobContext loaded successfully"
                 );
-                
+
                 // Convert step outputs to JSON for template
                 let mut steps = Vec::new();
                 for (step_id, step_output) in context.steps.iter() {
-                    let duration = (step_output.completed_at - step_output.started_at).num_milliseconds() as f64 / 1000.0;
-                    
+                    let duration = (step_output.completed_at - step_output.started_at)
+                        .num_milliseconds() as f64
+                        / 1000.0;
+
                     steps.push(serde_json::json!({
                         "step_id": step_id,
                         "status": step_output.status,
@@ -151,7 +160,7 @@ pub async fn get_execution(
                         "duration_seconds": duration,
                     }));
                 }
-                
+
                 Some(steps)
             }
             Err(e) => {

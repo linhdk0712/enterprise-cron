@@ -48,7 +48,10 @@ impl MySQLExecutor {
             QueryType::StoredProcedure {
                 procedure_name,
                 parameters,
-            } => self.execute_stored_procedure(&mut conn, procedure_name, parameters).await?,
+            } => {
+                self.execute_stored_procedure(&mut conn, procedure_name, parameters)
+                    .await?
+            }
         };
 
         // Disconnect

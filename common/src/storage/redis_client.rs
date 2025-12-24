@@ -25,9 +25,9 @@ impl RedisClient {
             StorageError::RedisError(format!("Failed to create Redis client: {}", e))
         })?;
 
-        let manager = ConnectionManager::new(client).await.map_err(|e| {
-            StorageError::RedisError(format!("Failed to connect to Redis: {}", e))
-        })?;
+        let manager = ConnectionManager::new(client)
+            .await
+            .map_err(|e| StorageError::RedisError(format!("Failed to connect to Redis: {}", e)))?;
 
         info!("Redis connection established");
         Ok(Self {
@@ -44,13 +44,13 @@ impl RedisClient {
     #[instrument(skip(self))]
     pub async fn health_check(&self) -> Result<(), StorageError> {
         use redis::cmd;
-        
+
         let mut conn = self.get_connection();
         cmd("PING")
             .query_async::<_, String>(&mut conn)
             .await
             .map_err(|e| StorageError::RedisError(format!("Redis health check failed: {}", e)))?;
-        
+
         Ok(())
     }
 }

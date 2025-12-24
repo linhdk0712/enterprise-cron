@@ -59,7 +59,10 @@ impl StepExecutor {
         context: &mut JobContext,
         execution: &mut JobExecution,
     ) -> Result<(), anyhow::Error> {
-        info!(step_count = job.steps.len(), "Executing job steps sequentially");
+        info!(
+            step_count = job.steps.len(),
+            "Executing job steps sequentially"
+        );
 
         for (index, step) in job.steps.iter().enumerate() {
             info!(
@@ -88,11 +91,8 @@ impl StepExecutor {
 
             // Execute step with timeout
             let timeout_duration = Duration::from_secs(job.timeout_seconds as u64);
-            let step_result = timeout(
-                timeout_duration,
-                self.execute_single_step(step, context),
-            )
-            .await;
+            let step_result =
+                timeout(timeout_duration, self.execute_single_step(step, context)).await;
 
             match step_result {
                 Ok(Ok(step_output)) => {
@@ -123,26 +123,27 @@ impl StepExecutor {
             }
         }
 
-        info!(total_steps = job.steps.len(), "All steps completed successfully");
+        info!(
+            total_steps = job.steps.len(),
+            "All steps completed successfully"
+        );
         Ok(())
     }
 
     /// Check if execution has been cancelled
     async fn check_cancellation(&self, execution: &JobExecution) -> Result<bool, anyhow::Error> {
         match self.execution_repo.find_by_id(execution.id).await {
-            Ok(Some(current_execution)) => {
-                match current_execution.status {
-                    ExecutionStatus::Cancelling => {
-                        info!("Graceful cancellation requested, stopping after current step");
-                        Ok(true)
-                    }
-                    ExecutionStatus::Cancelled => {
-                        info!("Force cancellation detected, stopping immediately");
-                        Ok(true)
-                    }
-                    _ => Ok(false),
+            Ok(Some(current_execution)) => match current_execution.status {
+                ExecutionStatus::Cancelling => {
+                    info!("Graceful cancellation requested, stopping after current step");
+                    Ok(true)
                 }
-            }
+                ExecutionStatus::Cancelled => {
+                    info!("Force cancellation detected, stopping immediately");
+                    Ok(true)
+                }
+                _ => Ok(false),
+            },
             Ok(None) => {
                 warn!("Execution not found in database, continuing");
                 Ok(false)
@@ -179,7 +180,8 @@ impl StepExecutor {
             info!(attempt = attempt + 1, "Executing step attempt");
 
             // Get circuit breaker
-            let circuit_breaker = self.circuit_breaker_manager
+            let circuit_breaker = self
+                .circuit_breaker_manager
                 .get_or_create(&format!("{}_{}", step.id, step.name))
                 .await;
 
@@ -187,7 +189,10 @@ impl StepExecutor {
             let mut context_clone = context.clone();
 
             // Execute with circuit breaker
-            match circuit_breaker.call(executor.execute(step, &mut context_clone)).await {
+            match circuit_breaker
+                .call(executor.execute(step, &mut context_clone))
+                .await
+            {
                 Ok(step_output) => {
                     info!("Step execution successful");
                     *context = context_clone;
@@ -214,7 +219,9 @@ impl StepExecutor {
         Err(anyhow::anyhow!(
             "Step execution failed after {} attempts: {}",
             attempt,
-            last_error.map(|e| e.to_string()).unwrap_or_else(|| "Unknown error".to_string())
+            last_error
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "Unknown error".to_string())
         ))
     }
 }

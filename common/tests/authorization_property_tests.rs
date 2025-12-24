@@ -242,12 +242,7 @@ fn property_70_execution_read_permission_enforcement() {
 #[cfg(test)]
 mod audit_logging_tests {
     use super::*;
-    use axum::{
-        body::Body,
-        http::Request,
-    };
-    
-    
+    use axum::{body::Body, http::Request};
 
     // Helper function to create a test request with authenticated user
     fn create_authenticated_request(user_id: &str, username: &str) -> Request<Body> {

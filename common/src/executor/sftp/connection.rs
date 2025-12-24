@@ -96,7 +96,7 @@ impl SftpConnection {
 /// Requirement 19.16: Host key verification
 fn verify_host_key_fn(sess: &Session) -> Result<(), ExecutionError> {
     debug!("Verifying host key");
-    
+
     if let Some((_host_key_bytes, host_key_type)) = sess.host_key() {
         let hash = sess.host_key_hash(ssh2::HashType::Sha256);
         if let Some(hash_bytes) = hash {
@@ -108,7 +108,7 @@ fn verify_host_key_fn(sess: &Session) -> Result<(), ExecutionError> {
             info!(host_key_type = ?host_key_type, hash = %hash_hex, "Host key verified");
         }
     }
-    
+
     Ok(())
 }
 
@@ -146,6 +146,6 @@ fn authenticate(sess: &Session, auth: &SftpAuth) -> Result<(), ExecutionError> {
                 })?;
         }
     }
-    
+
     Ok(())
 }

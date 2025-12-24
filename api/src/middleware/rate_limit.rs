@@ -82,10 +82,7 @@ impl RateLimiter {
         }
 
         // Get current count
-        let count: u32 = conn
-            .get(&key)
-            .await
-            .unwrap_or(0);
+        let count: u32 = conn.get(&key).await.unwrap_or(0);
 
         if count >= max_attempts {
             // Block this IP for 15 minutes

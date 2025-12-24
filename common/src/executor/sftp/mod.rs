@@ -2,13 +2,13 @@
 // Requirements: 19.1-19.17 - SFTP operations
 // RECC 2025: Module organization - max 100 lines for mod.rs
 
+mod auth;
 mod connection;
 mod operations;
-mod auth;
 
-pub use connection::SftpConnection;
-pub use operations::{download_file, upload_file, list_files};
 pub use auth::authenticate_session;
+pub use connection::SftpConnection;
+pub use operations::{download_file, list_files, upload_file};
 
 use crate::errors::ExecutionError;
 use crate::executor::JobExecutor;

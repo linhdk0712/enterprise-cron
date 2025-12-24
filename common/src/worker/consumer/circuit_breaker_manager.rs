@@ -32,7 +32,7 @@ impl CircuitBreakerManager {
 
         // Create new circuit breaker
         let mut breakers = self.breakers.write().await;
-        
+
         // Double-check after acquiring write lock
         if let Some(cb) = breakers.get(target) {
             return cb.clone();

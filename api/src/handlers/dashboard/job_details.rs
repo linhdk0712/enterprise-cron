@@ -1,15 +1,19 @@
 // Job details handlers
 // Requirements: 6.3 - Display job details with execution history
 
-use axum::{extract::{Path, State}, http::HeaderMap, response::Html};
+use axum::{
+    extract::{Path, State},
+    http::HeaderMap,
+    response::Html,
+};
 use common::db::repositories::job::JobStats;
 use tera::Context;
 use uuid::Uuid;
 
+use super::shared_utils::{get_schedule_type_str, load_job_from_storage};
 use crate::handlers::ErrorResponse;
 use crate::state::AppState;
 use crate::templates::TEMPLATES;
-use super::shared_utils::{get_schedule_type_str, load_job_from_storage};
 
 /// Prepare job data for template rendering
 fn prepare_job_data(
@@ -87,8 +91,6 @@ fn prepare_job_data(
     })
 }
 
-
-
 /// Job details modal content (HTMX)
 #[tracing::instrument(skip(state))]
 pub async fn job_details_modal(
@@ -118,13 +120,15 @@ pub async fn job_details_modal(
     let job_data = prepare_job_data(&job, full_job.as_ref(), stats.as_ref());
     context.insert("job", &job_data);
 
-    let html = TEMPLATES.render("_job_details_modal_content.html", &context).map_err(|e| {
-        tracing::error!(error = %e, job_id = %id, "Template rendering failed");
-        ErrorResponse::new(
-            "template_error",
-            &format!("Failed to render job details modal: {}", e),
-        )
-    })?;
+    let html = TEMPLATES
+        .render("_job_details_modal_content.html", &context)
+        .map_err(|e| {
+            tracing::error!(error = %e, job_id = %id, "Template rendering failed");
+            ErrorResponse::new(
+                "template_error",
+                &format!("Failed to render job details modal: {}", e),
+            )
+        })?;
 
     Ok(Html(html))
 }
@@ -138,7 +142,7 @@ pub async fn job_details_partial(
 ) -> Result<Html<String>, ErrorResponse> {
     let mut context = Context::new();
     context.insert("active_page", "jobs");
-    
+
     let is_htmx = headers.get("HX-Request").is_some();
     context.insert("is_htmx", &is_htmx);
 

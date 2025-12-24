@@ -474,7 +474,10 @@ pub async fn login_page(
             "block"
         },
         error_html = if !error_message.is_empty() {
-            format!(r#"<div class="error-message">{}</div>"#, html_escape(&error_message))
+            format!(
+                r#"<div class="error-message">{}</div>"#,
+                html_escape(&error_message)
+            )
         } else {
             String::new()
         },
@@ -520,7 +523,10 @@ pub async fn login_form_submit(
             // For now, redirect to a page that sets the token via JS
             // Simple URL encoding for token (replace special chars)
             let encoded_token = token.replace('&', "%26").replace('=', "%3D");
-            Redirect::to(&format!("/auth/set-token?token={}&redirect=/dashboard", encoded_token))
+            Redirect::to(&format!(
+                "/auth/set-token?token={}&redirect=/dashboard",
+                encoded_token
+            ))
         }
         Err(e) => {
             tracing::warn!(
@@ -530,9 +536,7 @@ pub async fn login_form_submit(
             );
 
             let error_msg = match e {
-                common::errors::AuthError::InvalidCredentials => {
-                    "Invalid username or password"
-                }
+                common::errors::AuthError::InvalidCredentials => "Invalid username or password",
                 _ => "Authentication failed. Please try again.",
             };
 
@@ -548,7 +552,10 @@ pub async fn login_form_submit(
 #[tracing::instrument]
 pub async fn set_token_page(Query(params): Query<HashMap<String, String>>) -> Html<String> {
     let token = params.get("token").cloned().unwrap_or_default();
-    let redirect = params.get("redirect").cloned().unwrap_or_else(|| "/dashboard".to_string());
+    let redirect = params
+        .get("redirect")
+        .cloned()
+        .unwrap_or_else(|| "/dashboard".to_string());
 
     let html = format!(
         r#"<!DOCTYPE html>
@@ -590,7 +597,10 @@ mod tests {
 
     #[test]
     fn test_html_escape() {
-        assert_eq!(html_escape("<script>alert('xss')</script>"), "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;");
+        assert_eq!(
+            html_escape("<script>alert('xss')</script>"),
+            "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;"
+        );
         assert_eq!(html_escape("normal text"), "normal text");
         assert_eq!(html_escape("a & b"), "a &amp; b");
     }

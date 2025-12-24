@@ -2,9 +2,9 @@
 // Requirements: 3.7, 3.8, 3.9, 3.10
 // Tách theo RECC 2025 rules - Mỗi database type một file riêng
 
-mod postgresql;
 mod mysql;
 mod oracle;
+mod postgresql;
 
 use crate::errors::ExecutionError;
 use crate::executor::JobExecutor;
@@ -15,9 +15,9 @@ use chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub use postgresql::PostgreSQLExecutor;
 pub use mysql::MySQLExecutor;
 pub use oracle::OracleExecutor;
+pub use postgresql::PostgreSQLExecutor;
 
 /// DatabaseExecutor executes database query jobs
 pub struct DatabaseExecutor {
@@ -138,19 +138,31 @@ impl JobExecutor for DatabaseExecutor {
             DatabaseType::PostgreSQL => {
                 let executor = PostgreSQLExecutor::new(self.timeout);
                 executor
-                    .execute_query(&resolved_connection_string, &resolved_query, &resolved_query_type)
+                    .execute_query(
+                        &resolved_connection_string,
+                        &resolved_query,
+                        &resolved_query_type,
+                    )
                     .await?
             }
             DatabaseType::MySQL => {
                 let executor = MySQLExecutor::new(self.timeout);
                 executor
-                    .execute_query(&resolved_connection_string, &resolved_query, &resolved_query_type)
+                    .execute_query(
+                        &resolved_connection_string,
+                        &resolved_query,
+                        &resolved_query_type,
+                    )
                     .await?
             }
             DatabaseType::Oracle => {
                 let executor = OracleExecutor::new(self.timeout);
                 executor
-                    .execute_query(&resolved_connection_string, &resolved_query, &resolved_query_type)
+                    .execute_query(
+                        &resolved_connection_string,
+                        &resolved_query,
+                        &resolved_query_type,
+                    )
                     .await?
             }
         };

@@ -62,7 +62,10 @@ impl OracleExecutor {
             QueryType::StoredProcedure {
                 procedure_name,
                 parameters,
-            } => self.execute_stored_procedure(&conn, procedure_name, parameters).await?,
+            } => {
+                self.execute_stored_procedure(&conn, procedure_name, parameters)
+                    .await?
+            }
         };
 
         // Close connection

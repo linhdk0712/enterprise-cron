@@ -1,15 +1,19 @@
 // Variables list handler
 // Requirements: 6.5 - Display variables with pagination
 
-use axum::{extract::{Query, State}, http::HeaderMap, response::Html};
+use axum::{
+    extract::{Query, State},
+    http::HeaderMap,
+    response::Html,
+};
 use chrono::{DateTime, Utc};
 use tera::Context;
 use uuid::Uuid;
 
+use super::ExecutionQueryParams;
 use crate::handlers::ErrorResponse;
 use crate::state::AppState;
 use crate::templates::TEMPLATES;
-use super::ExecutionQueryParams;
 
 /// Variables partial (HTMX)
 #[tracing::instrument(skip(state, headers))]

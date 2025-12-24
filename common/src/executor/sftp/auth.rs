@@ -22,19 +22,13 @@ pub fn authenticate_session(sess: &Session, auth: &SftpAuth) -> Result<(), Execu
         SftpAuth::SshKey {
             username,
             private_key_path,
-        } => {
-            sess.userauth_pubkey_file(
-                username,
-                None,
-                std::path::Path::new(private_key_path),
-                None,
-            )
+        } => sess
+            .userauth_pubkey_file(username, None, std::path::Path::new(private_key_path), None)
             .map_err(|e| {
                 ExecutionError::SftpAuthenticationFailed(format!(
                     "SSH key authentication failed: {}",
                     e
                 ))
-            })
-        }
+            }),
     }
 }

@@ -62,23 +62,17 @@ pub async fn list_users(
 ) -> Result<Json<SuccessResponse<Vec<UserResponse>>>, ErrorResponse> {
     let user_repository = UserRepository::new(state.db_pool.clone());
 
-    let users = user_repository
-        .find_all()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to list users");
-            ErrorResponse::new("internal_error", "Failed to list users")
-        })?;
+    let users = user_repository.find_all().await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to list users");
+        ErrorResponse::new("internal_error", "Failed to list users")
+    })?;
 
     let mut user_responses = Vec::new();
     for user in users {
-        let roles = user_repository
-            .get_user_roles(user.id)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, user_id = %user.id, "Failed to get user roles");
-                ErrorResponse::new("internal_error", "Failed to get user roles")
-            })?;
+        let roles = user_repository.get_user_roles(user.id).await.map_err(|e| {
+            tracing::error!(error = %e, user_id = %user.id, "Failed to get user roles");
+            ErrorResponse::new("internal_error", "Failed to get user roles")
+        })?;
 
         user_responses.push(UserResponse {
             id: user.id,
@@ -123,13 +117,10 @@ pub async fn get_user(
         })?
         .ok_or_else(|| ErrorResponse::new("not_found", "User not found"))?;
 
-    let roles = user_repository
-        .get_user_roles(user.id)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user.id, "Failed to get user roles");
-            ErrorResponse::new("internal_error", "Failed to get user roles")
-        })?;
+    let roles = user_repository.get_user_roles(user.id).await.map_err(|e| {
+        tracing::error!(error = %e, user_id = %user.id, "Failed to get user roles");
+        ErrorResponse::new("internal_error", "Failed to get user roles")
+    })?;
 
     let response = UserResponse {
         id: user.id,
@@ -192,21 +183,15 @@ pub async fn update_user(
 
     user.updated_at = chrono::Utc::now();
 
-    user_repository
-        .update(&user)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "Failed to update user");
-            ErrorResponse::new("internal_error", "Failed to update user")
-        })?;
+    user_repository.update(&user).await.map_err(|e| {
+        tracing::error!(error = %e, user_id = %user_id, "Failed to update user");
+        ErrorResponse::new("internal_error", "Failed to update user")
+    })?;
 
-    let roles = user_repository
-        .get_user_roles(user.id)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user.id, "Failed to get user roles");
-            ErrorResponse::new("internal_error", "Failed to get user roles")
-        })?;
+    let roles = user_repository.get_user_roles(user.id).await.map_err(|e| {
+        tracing::error!(error = %e, user_id = %user.id, "Failed to get user roles");
+        ErrorResponse::new("internal_error", "Failed to get user roles")
+    })?;
 
     let response = UserResponse {
         id: user.id,
@@ -245,13 +230,10 @@ pub async fn delete_user(
 
     let user_repository = UserRepository::new(state.db_pool.clone());
 
-    user_repository
-        .delete(user_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "Failed to delete user");
-            ErrorResponse::new("internal_error", "Failed to delete user")
-        })?;
+    user_repository.delete(user_id).await.map_err(|e| {
+        tracing::error!(error = %e, user_id = %user_id, "Failed to delete user");
+        ErrorResponse::new("internal_error", "Failed to delete user")
+    })?;
 
     tracing::info!(
         user_id = %user_id,
@@ -293,13 +275,10 @@ pub async fn assign_roles(
         .ok_or_else(|| ErrorResponse::new("not_found", "User not found"))?;
 
     // Get existing roles and remove them
-    let existing_roles = user_repository
-        .get_user_roles(user_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "Failed to get existing roles");
-            ErrorResponse::new("internal_error", "Failed to get existing roles")
-        })?;
+    let existing_roles = user_repository.get_user_roles(user_id).await.map_err(|e| {
+        tracing::error!(error = %e, user_id = %user_id, "Failed to get existing roles");
+        ErrorResponse::new("internal_error", "Failed to get existing roles")
+    })?;
 
     for role in existing_roles {
         user_repository
@@ -334,13 +313,10 @@ pub async fn assign_roles(
         "User roles changed. Token invalidation not yet implemented. User should re-login."
     );
 
-    let roles = user_repository
-        .get_user_roles(user.id)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user.id, "Failed to get user roles");
-            ErrorResponse::new("internal_error", "Failed to get user roles")
-        })?;
+    let roles = user_repository.get_user_roles(user.id).await.map_err(|e| {
+        tracing::error!(error = %e, user_id = %user.id, "Failed to get user roles");
+        ErrorResponse::new("internal_error", "Failed to get user roles")
+    })?;
 
     let response = UserResponse {
         id: user.id,
@@ -408,13 +384,10 @@ pub async fn update_password(
     user.password_hash = password_hash;
     user.updated_at = chrono::Utc::now();
 
-    user_repository
-        .update(&user)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "Failed to update password");
-            ErrorResponse::new("internal_error", "Failed to update password")
-        })?;
+    user_repository.update(&user).await.map_err(|e| {
+        tracing::error!(error = %e, user_id = %user_id, "Failed to update password");
+        ErrorResponse::new("internal_error", "Failed to update password")
+    })?;
 
     tracing::info!(
         user_id = %user_id,
@@ -434,13 +407,10 @@ pub async fn list_roles(
 ) -> Result<Json<SuccessResponse<Vec<RoleResponse>>>, ErrorResponse> {
     let user_repository = UserRepository::new(state.db_pool.clone());
 
-    let roles = user_repository
-        .find_all_roles()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to list roles");
-            ErrorResponse::new("internal_error", "Failed to list roles")
-        })?;
+    let roles = user_repository.find_all_roles().await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to list roles");
+        ErrorResponse::new("internal_error", "Failed to list roles")
+    })?;
 
     let role_responses: Vec<RoleResponse> = roles.into_iter().map(RoleResponse::from).collect();
 

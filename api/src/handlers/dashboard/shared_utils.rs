@@ -10,10 +10,9 @@ use uuid::Uuid;
 
 use crate::handlers::ErrorResponse;
 
-
 /// Load full job definition from MinIO with Redis cache fallback
 /// Returns None if path is empty or loading fails
-/// 
+///
 /// This function consolidates the MinIO loading logic used in:
 /// - job_details.rs (load_job_definition)
 /// - jobs_list.rs (inline loading in loop)
@@ -46,7 +45,7 @@ pub async fn load_job_from_storage(
 }
 
 /// Extract schedule type as display string
-/// 
+///
 /// Consolidates schedule type extraction from:
 /// - job_details.rs (inline match)
 /// - jobs_list.rs (get_schedule_type function)
@@ -61,7 +60,7 @@ pub fn get_schedule_type_str(schedule: &Option<Schedule>) -> Option<&'static str
 
 /// Get human-readable next run time from schedule
 /// Returns None if job is disabled
-/// 
+///
 /// Consolidates logic from jobs_list.rs (get_next_run_time)
 pub fn get_next_run_display(schedule: &Option<Schedule>, enabled: bool) -> Option<String> {
     if !enabled {
@@ -79,7 +78,7 @@ pub fn get_next_run_display(schedule: &Option<Schedule>, enabled: bool) -> Optio
 }
 
 /// Extract job type from first step
-/// 
+///
 /// Consolidates logic from jobs_list.rs (get_job_type)
 pub fn get_job_type_str(steps: &[JobStep]) -> Option<&'static str> {
     steps.first().map(|step| match &step.step_type {
@@ -92,7 +91,7 @@ pub fn get_job_type_str(steps: &[JobStep]) -> Option<&'static str> {
 
 /// Check if request is HTMX and setup context accordingly
 /// Returns (is_htmx, content_template, full_template)
-/// 
+///
 /// Consolidates HTMX detection pattern from all dashboard handlers
 pub fn setup_htmx_context(
     context: &mut Context,

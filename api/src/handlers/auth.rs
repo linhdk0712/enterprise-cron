@@ -195,16 +195,12 @@ pub async fn login(
         .build();
 
     // Build response with cookie and JSON body
-    let mut response = Json(SuccessResponse::new(LoginResponse {
-        token,
-        expires_at,
-    }))
-    .into_response();
+    let mut response =
+        Json(SuccessResponse::new(LoginResponse { token, expires_at })).into_response();
 
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        cookie.to_string().parse().unwrap(),
-    );
+    response
+        .headers_mut()
+        .insert(header::SET_COOKIE, cookie.to_string().parse().unwrap());
 
     Ok(response)
 }

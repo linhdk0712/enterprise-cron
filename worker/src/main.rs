@@ -44,11 +44,9 @@ async fn main() -> Result<()> {
     let redis_conn_manager = bootstrap::init_redis_connection_manager(&settings).await?;
 
     // Initialize Storage service (PostgreSQL + Redis + Filesystem)
-    let storage_service = bootstrap::init_storage_service(
-        &settings,
-        db_pool.clone(),
-        Arc::new(redis_conn_manager)
-    ).await?;
+    let storage_service =
+        bootstrap::init_storage_service(&settings, db_pool.clone(), Arc::new(redis_conn_manager))
+            .await?;
 
     // Initialize context manager
     let context_manager = Arc::new(JobContextManager::new(storage_service.clone()));

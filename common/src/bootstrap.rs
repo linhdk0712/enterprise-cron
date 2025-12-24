@@ -14,13 +14,11 @@ use tracing::info;
 
 /// Initialize Redis connection manager for storage cache
 /// Used by: API server, Worker
-/// 
+///
 /// # Errors
 /// Returns error if Redis client creation or connection manager initialization fails
 #[tracing::instrument(skip(settings))]
-pub async fn init_redis_connection_manager(
-    settings: &Settings,
-) -> Result<RedisConnectionManager> {
+pub async fn init_redis_connection_manager(settings: &Settings) -> Result<RedisConnectionManager> {
     info!("Initializing Redis connection manager");
 
     let redis_client = redis::Client::open(settings.redis.url.as_str())
@@ -36,7 +34,7 @@ pub async fn init_redis_connection_manager(
 
 /// Initialize Storage service (PostgreSQL + Redis + Filesystem)
 /// Used by: API server, Worker
-/// 
+///
 /// # Errors
 /// Returns error if storage service initialization fails
 #[tracing::instrument(skip(settings, db_pool, redis_conn_manager))]
@@ -48,7 +46,7 @@ pub async fn init_storage_service(
     info!("Initializing Storage service (PostgreSQL + Redis + Filesystem)");
 
     let file_base_path = PathBuf::from(&settings.storage.file_base_path);
-    
+
     // Create file storage directory if it doesn't exist
     if !file_base_path.exists() {
         tokio::fs::create_dir_all(&file_base_path)
@@ -72,11 +70,11 @@ pub async fn init_storage_service(
 
 /// Initialize NATS client with standard configuration
 /// Used by: Worker, Scheduler
-/// 
+///
 /// # Arguments
 /// * `settings` - Application settings
 /// * `consumer_name` - Name for the NATS consumer (e.g., "worker-consumer", "scheduler-consumer")
-/// 
+///
 /// # Errors
 /// Returns error if NATS client initialization fails
 #[tracing::instrument(skip(settings))]
@@ -103,7 +101,7 @@ pub async fn init_nats_client(settings: &Settings, consumer_name: &str) -> Resul
 
 /// Initialize database pool
 /// Used by: API server, Worker, Scheduler
-/// 
+///
 /// # Errors
 /// Returns error if database pool initialization fails
 #[tracing::instrument(skip(settings))]
@@ -120,7 +118,7 @@ pub async fn init_database_pool(settings: &Settings) -> Result<DbPool> {
 
 /// Initialize Redis pool for distributed locking
 /// Used by: Scheduler
-/// 
+///
 /// # Errors
 /// Returns error if Redis pool initialization fails
 #[tracing::instrument(skip(settings))]
@@ -137,7 +135,7 @@ pub async fn init_redis_pool(settings: &Settings) -> Result<RedisPool> {
 
 /// Initialize tracing for JSON logging
 /// Used by: Worker, Scheduler
-/// 
+///
 /// This sets up structured JSON logging with thread IDs and log levels
 pub fn init_json_tracing() {
     tracing_subscriber::fmt()
@@ -150,7 +148,7 @@ pub fn init_json_tracing() {
 
 /// Initialize tracing for human-readable logging
 /// Used by: API server (development)
-/// 
+///
 /// This sets up human-readable logging with environment filter
 pub fn init_human_tracing() {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

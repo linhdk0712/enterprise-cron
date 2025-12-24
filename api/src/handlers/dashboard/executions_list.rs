@@ -1,16 +1,20 @@
 // Executions list handler
 // Requirements: 6.4 - Display execution history with filtering
 
-use axum::{extract::{Query, State}, http::HeaderMap, response::Html};
+use axum::{
+    extract::{Query, State},
+    http::HeaderMap,
+    response::Html,
+};
 use chrono::{DateTime, Utc};
 use tera::Context;
 use uuid::Uuid;
 
+use super::shared_utils::{calculate_pagination, db_error, setup_htmx_context};
+use super::ExecutionQueryParams;
 use crate::handlers::ErrorResponse;
 use crate::state::AppState;
 use crate::templates::TEMPLATES;
-use super::ExecutionQueryParams;
-use super::shared_utils::{setup_htmx_context, calculate_pagination, db_error};
 
 /// Executions partial (HTMX)
 #[tracing::instrument(skip(state, headers))]
@@ -47,13 +51,19 @@ pub async fn executions_partial(
 
     if let Some(trigger_source) = &params.trigger_source {
         if !trigger_source.is_empty() {
-            count_query.push_str(&format!(" AND je.trigger_source = '{}'", trigger_source.to_lowercase()));
+            count_query.push_str(&format!(
+                " AND je.trigger_source = '{}'",
+                trigger_source.to_lowercase()
+            ));
         }
     }
 
     if let Some(job_name) = &params.job_name {
         if !job_name.is_empty() {
-            count_query.push_str(&format!(" AND j.name ILIKE '%{}%'", job_name.replace("'", "''")));
+            count_query.push_str(&format!(
+                " AND j.name ILIKE '%{}%'",
+                job_name.replace("'", "''")
+            ));
         }
     }
 
@@ -88,13 +98,19 @@ pub async fn executions_partial(
 
     if let Some(trigger_source) = &params.trigger_source {
         if !trigger_source.is_empty() {
-            query.push_str(&format!(" AND je.trigger_source = '{}'", trigger_source.to_lowercase()));
+            query.push_str(&format!(
+                " AND je.trigger_source = '{}'",
+                trigger_source.to_lowercase()
+            ));
         }
     }
 
     if let Some(job_name) = &params.job_name {
         if !job_name.is_empty() {
-            query.push_str(&format!(" AND j.name ILIKE '%{}%'", job_name.replace("'", "''")));
+            query.push_str(&format!(
+                " AND j.name ILIKE '%{}%'",
+                job_name.replace("'", "''")
+            ));
         }
     }
 
@@ -151,16 +167,30 @@ pub async fn executions_partial(
     context.insert("total_pages", &total_pages);
     context.insert("total_count", &total_count);
     context.insert("status_filter", &params.status.clone().unwrap_or_default());
-    context.insert("trigger_source_filter", &params.trigger_source.clone().unwrap_or_default());
-    context.insert("job_name_filter", &params.job_name.clone().unwrap_or_default());
-    context.insert("job_id_filter", &params.job_id.map(|id| id.to_string()).unwrap_or_default());
-    
+    context.insert(
+        "trigger_source_filter",
+        &params.trigger_source.clone().unwrap_or_default(),
+    );
+    context.insert(
+        "job_name_filter",
+        &params.job_name.clone().unwrap_or_default(),
+    );
+    context.insert(
+        "job_id_filter",
+        &params.job_id.map(|id| id.to_string()).unwrap_or_default(),
+    );
+
     // Check if this is embedded in job details (has job_id filter)
     let is_embedded = params.job_id.is_some();
     context.insert("is_embedded", &is_embedded);
 
     // Setup HTMX context and determine template using shared utility
-    let template = setup_htmx_context(&mut context, &headers, "_executions_content.html", "executions.html");
+    let template = setup_htmx_context(
+        &mut context,
+        &headers,
+        "_executions_content.html",
+        "executions.html",
+    );
 
     let html = TEMPLATES.render(template, &context).map_err(|e| {
         tracing::error!(error = %e, "Template rendering failed");

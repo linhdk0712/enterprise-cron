@@ -18,6 +18,7 @@ Thumbs.db
 # Environment
 .env
 .env.local
+.envrc.local
 config/local.toml
 *.local.toml
 

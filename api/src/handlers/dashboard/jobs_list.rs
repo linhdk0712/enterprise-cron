@@ -1,17 +1,21 @@
 // Jobs list handler
 // Requirements: 6.2 - Display paginated job list
 
-use axum::{extract::{Query, State}, http::HeaderMap, response::Html};
+use axum::{
+    extract::{Query, State},
+    http::HeaderMap,
+    response::Html,
+};
 use tera::Context;
 
+use super::shared_utils::{
+    calculate_pagination, get_job_type_str, get_next_run_display, get_schedule_type_str,
+    load_job_from_storage, setup_htmx_context,
+};
+use super::ExecutionQueryParams;
 use crate::handlers::ErrorResponse;
 use crate::state::AppState;
 use crate::templates::TEMPLATES;
-use super::ExecutionQueryParams;
-use super::shared_utils::{
-    load_job_from_storage, get_schedule_type_str, get_next_run_display, get_job_type_str,
-    setup_htmx_context, calculate_pagination,
-};
 
 /// Jobs list partial (HTMX)
 #[tracing::instrument(skip(state, headers))]
@@ -29,7 +33,7 @@ pub async fn jobs_partial(
     // Fetch jobs with pagination
     let job_repo = common::db::repositories::JobRepository::new(state.db_pool.clone());
     let all_jobs = job_repo.find_all().await.unwrap_or_default();
-    
+
     // Apply pagination
     let total_jobs = all_jobs.len() as i64;
     let start = offset as usize;
@@ -38,11 +42,11 @@ pub async fn jobs_partial(
 
     // Convert jobs to JSON for template with full details
     let mut jobs_json: Vec<serde_json::Value> = Vec::new();
-    
+
     for job in paginated_jobs {
         // Load full job definition from storage (Redis cache → PostgreSQL) using shared utility
-        let (schedule_type, next_run_time, job_type) = if let Some(full_job) = 
-            load_job_from_storage(state.storage_service.as_ref(), job.id).await 
+        let (schedule_type, next_run_time, job_type) = if let Some(full_job) =
+            load_job_from_storage(state.storage_service.as_ref(), job.id).await
         {
             let sched_type = get_schedule_type_str(&full_job.schedule);
             let next_run = get_next_run_display(&full_job.schedule, job.enabled);
@@ -51,13 +55,13 @@ pub async fn jobs_partial(
         } else {
             (None, None, None)
         };
-        
+
         // Get job statistics
         let stats = job_repo.get_stats(job.id).await.ok().flatten();
         let last_exec = stats.as_ref().and_then(|s| s.last_execution_at);
         let total_execs = stats.as_ref().map(|s| s.total_executions).unwrap_or(0);
         let success_execs = stats.as_ref().map(|s| s.successful_executions).unwrap_or(0);
-        
+
         jobs_json.push(serde_json::json!({
             "id": job.id.to_string(),
             "name": job.name,
@@ -80,7 +84,7 @@ pub async fn jobs_partial(
     // Calculate pagination using shared utility
     let total_count = total_jobs;
     let (page, total_pages) = calculate_pagination(offset, limit, total_count);
-    
+
     context.insert("jobs", &jobs_json);
     context.insert("limit", &limit);
     context.insert("offset", &offset);

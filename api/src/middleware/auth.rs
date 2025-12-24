@@ -34,16 +34,14 @@ pub async fn auth_middleware(
             .get("Cookie")
             .and_then(|h| h.to_str().ok())
             .and_then(|cookies| {
-                cookies
-                    .split(';')
-                    .find_map(|cookie| {
-                        let parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
-                        if parts.len() == 2 && parts[0] == "auth_token" {
-                            Some(parts[1].to_string())
-                        } else {
-                            None
-                        }
-                    })
+                cookies.split(';').find_map(|cookie| {
+                    let parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
+                    if parts.len() == 2 && parts[0] == "auth_token" {
+                        Some(parts[1].to_string())
+                    } else {
+                        None
+                    }
+                })
             })
             .ok_or_else(|| {
                 tracing::warn!("No authorization token found in header or cookie");

@@ -35,20 +35,31 @@ pub async fn execute_sftp_step(
             remote_path,
             local_path,
             options,
-        } => (operation, host, *port, auth, remote_path, local_path, options),
+        } => (
+            operation,
+            host,
+            *port,
+            auth,
+            remote_path,
+            local_path,
+            options,
+        ),
         _ => {
             return Err(ExecutionError::InvalidJobType(
-                "Expected SFTP step, got different type".to_string()
+                "Expected SFTP step, got different type".to_string(),
             ))
         }
     };
 
     // Resolve references in configuration
-    let host_resolved = reference_resolver.resolve(host, context).unwrap_or_else(|_| host.clone());
+    let host_resolved = reference_resolver
+        .resolve(host, context)
+        .unwrap_or_else(|_| host.clone());
     let verify_host_key = options.verify_host_key;
 
     // Establish SFTP connection
-    let connection = SftpConnection::connect(&host_resolved, port, auth, verify_host_key, timeout_seconds)?;
+    let connection =
+        SftpConnection::connect(&host_resolved, port, auth, verify_host_key, timeout_seconds)?;
 
     // Execute operation based on type
     match operation {
@@ -85,8 +96,10 @@ async fn download_operation(
     storage_service: &Arc<dyn StorageService>,
     reference_resolver: &Arc<ReferenceResolver>,
 ) -> Result<StepOutput, ExecutionError> {
-    let remote_path = reference_resolver.resolve(remote_path, context).unwrap_or_else(|_| remote_path.to_string());
-    
+    let remote_path = reference_resolver
+        .resolve(remote_path, context)
+        .unwrap_or_else(|_| remote_path.to_string());
+
     info!(remote_path = %remote_path, "Downloading file from SFTP");
 
     // Open SFTP channel
@@ -159,11 +172,20 @@ async fn download_operation(
         step_id: "sftp_download".to_string(),
         status: "success".to_string(),
         output: Value::Object(serde_json::Map::from_iter(vec![
-            ("operation".to_string(), Value::String("download".to_string())),
+            (
+                "operation".to_string(),
+                Value::String("download".to_string()),
+            ),
             ("remote_path".to_string(), Value::String(remote_path)),
             ("local_path".to_string(), Value::String(file_path)),
-            ("bytes_transferred".to_string(), Value::Number(buffer.len().into())),
-            ("file".to_string(), serde_json::to_value(&metadata).unwrap_or(Value::Null)),
+            (
+                "bytes_transferred".to_string(),
+                Value::Number(buffer.len().into()),
+            ),
+            (
+                "file".to_string(),
+                serde_json::to_value(&metadata).unwrap_or(Value::Null),
+            ),
         ])),
         started_at: Utc::now(),
         completed_at: Utc::now(),
@@ -180,19 +202,20 @@ async fn upload_operation(
     storage_service: &Arc<dyn StorageService>,
     reference_resolver: &Arc<ReferenceResolver>,
 ) -> Result<StepOutput, ExecutionError> {
-    let local_path = reference_resolver.resolve(local_path, context).unwrap_or_else(|_| local_path.to_string());
-    let remote_path = reference_resolver.resolve(remote_path, context).unwrap_or_else(|_| remote_path.to_string());
-    
+    let local_path = reference_resolver
+        .resolve(local_path, context)
+        .unwrap_or_else(|_| local_path.to_string());
+    let remote_path = reference_resolver
+        .resolve(remote_path, context)
+        .unwrap_or_else(|_| remote_path.to_string());
+
     info!(local_path = %local_path, remote_path = %remote_path, "Uploading file to SFTP");
 
     // Load file from filesystem
-    let file_data = storage_service
-        .load_file(&local_path)
-        .await
-        .map_err(|e| {
-            error!(error = %e, local_path = %local_path, "Failed to load file");
-            ExecutionError::StorageFailed(format!("Failed to load file: {}", e))
-        })?;
+    let file_data = storage_service.load_file(&local_path).await.map_err(|e| {
+        error!(error = %e, local_path = %local_path, "Failed to load file");
+        ExecutionError::StorageFailed(format!("Failed to load file: {}", e))
+    })?;
 
     // Open SFTP channel
     let sftp = sess.sftp().map_err(|e| {
@@ -232,7 +255,10 @@ async fn upload_operation(
             ("operation".to_string(), Value::String("upload".to_string())),
             ("local_path".to_string(), Value::String(local_path)),
             ("remote_path".to_string(), Value::String(remote_path)),
-            ("bytes_transferred".to_string(), Value::Number(file_data.len().into())),
+            (
+                "bytes_transferred".to_string(),
+                Value::Number(file_data.len().into()),
+            ),
         ])),
         started_at: Utc::now(),
         completed_at: Utc::now(),
@@ -244,18 +270,15 @@ fn create_remote_dirs_fn(sftp: &ssh2::Sftp, path: &Path) -> Result<(), Execution
     if let Some(parent) = path.parent() {
         create_remote_dirs_fn(sftp, parent)?;
     }
-    
+
     // Try to create directory, ignore if exists
     let _ = sftp.mkdir(path, 0o755);
-    
+
     Ok(())
 }
 
 /// List files in remote directory
-pub async fn list_files(
-    sess: &Session,
-    remote_path: &str,
-) -> Result<Vec<String>, ExecutionError> {
+pub async fn list_files(sess: &Session, remote_path: &str) -> Result<Vec<String>, ExecutionError> {
     let sftp = sess.sftp().map_err(|e| {
         ExecutionError::SftpOperationFailed(format!("Failed to open SFTP channel: {}", e))
     })?;
@@ -283,14 +306,14 @@ pub async fn download_file(
         ExecutionError::SftpOperationFailed(format!("Failed to open SFTP channel: {}", e))
     })?;
 
-    let mut remote_file = sftp.open(Path::new(remote_path)).map_err(|e| {
-        ExecutionError::SftpFileNotFound(format!("File not found: {}", e))
-    })?;
+    let mut remote_file = sftp
+        .open(Path::new(remote_path))
+        .map_err(|e| ExecutionError::SftpFileNotFound(format!("File not found: {}", e)))?;
 
     let mut buffer = Vec::new();
-    remote_file.read_to_end(&mut buffer).map_err(|e| {
-        ExecutionError::SftpOperationFailed(format!("Failed to read file: {}", e))
-    })?;
+    remote_file
+        .read_to_end(&mut buffer)
+        .map_err(|e| ExecutionError::SftpOperationFailed(format!("Failed to read file: {}", e)))?;
 
     storage_service
         .store_file(local_path, &buffer)
@@ -331,9 +354,8 @@ pub async fn upload_file(
         ExecutionError::SftpOperationFailed(format!("Failed to create remote file: {}", e))
     })?;
 
-    std::io::Write::write_all(&mut remote_file, &file_data).map_err(|e| {
-        ExecutionError::SftpOperationFailed(format!("Failed to write file: {}", e))
-    })?;
+    std::io::Write::write_all(&mut remote_file, &file_data)
+        .map_err(|e| ExecutionError::SftpOperationFailed(format!("Failed to write file: {}", e)))?;
 
     Ok(())
 }

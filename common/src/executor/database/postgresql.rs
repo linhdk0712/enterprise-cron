@@ -21,7 +21,10 @@ impl PostgreSQLExecutor {
     }
 
     /// Execute PostgreSQL query
-    #[tracing::instrument(skip(self, connection_string, query), fields(database_type = "postgresql"))]
+    #[tracing::instrument(
+        skip(self, connection_string, query),
+        fields(database_type = "postgresql")
+    )]
     pub async fn execute_query(
         &self,
         connection_string: &str,
@@ -48,7 +51,10 @@ impl PostgreSQLExecutor {
             QueryType::StoredProcedure {
                 procedure_name,
                 parameters,
-            } => self.execute_stored_procedure(&pool, procedure_name, parameters).await?,
+            } => {
+                self.execute_stored_procedure(&pool, procedure_name, parameters)
+                    .await?
+            }
         };
 
         // Close the pool

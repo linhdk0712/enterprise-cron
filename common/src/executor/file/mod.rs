@@ -2,14 +2,13 @@
 // Requirements: 15.1-15.12 - File processing with Excel/CSV support
 // Tách theo RECC 2025 rules - Tách theo file format
 
-mod excel;
 mod csv;
+mod excel;
 mod transformations;
 
 use crate::errors::ExecutionError;
 use crate::models::{
-    FileFormat, FileMetadata, FileOperation, JobContext, JobStep, JobType,
-    StepOutput,
+    FileFormat, FileMetadata, FileOperation, JobContext, JobStep, JobType, StepOutput,
 };
 use crate::storage::StorageService;
 use async_trait::async_trait;
@@ -18,8 +17,8 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::instrument;
 
-pub use excel::ExcelProcessor;
 pub use csv::CsvProcessor;
+pub use excel::ExcelProcessor;
 pub use transformations::TransformationEngine;
 
 /// FileProcessingExecutor handles Excel and CSV file processing
@@ -100,13 +99,17 @@ impl super::JobExecutor for FileProcessingExecutor {
                         self.excel_processor.read(source, options, context).await?
                     }
                     FileFormat::Csv { delimiter } => {
-                        self.csv_processor.read(source, *delimiter, options, context).await?
+                        self.csv_processor
+                            .read(source, *delimiter, options, context)
+                            .await?
                     }
                 };
 
                 // Apply transformations if specified
                 if !options.transformations.is_empty() {
-                    data = self.transformation_engine.apply(&data, &options.transformations)?;
+                    data = self
+                        .transformation_engine
+                        .apply(&data, &options.transformations)?;
                 }
 
                 let row_count = self.count_rows_in_data(&data);
@@ -157,10 +160,14 @@ impl super::JobExecutor for FileProcessingExecutor {
 
                 let file_metadata = match format {
                     FileFormat::Excel => {
-                        self.excel_processor.write(&data, destination, context).await?
+                        self.excel_processor
+                            .write(&data, destination, context)
+                            .await?
                     }
                     FileFormat::Csv { delimiter } => {
-                        self.csv_processor.write(&data, destination, *delimiter, context).await?
+                        self.csv_processor
+                            .write(&data, destination, *delimiter, context)
+                            .await?
                     }
                 };
 

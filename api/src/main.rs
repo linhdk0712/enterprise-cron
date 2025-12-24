@@ -110,8 +110,9 @@ async fn main() -> Result<()> {
     let storage_service = bootstrap::init_storage_service(
         &config,
         db_pool.clone(),
-        std::sync::Arc::new(redis_conn_manager)
-    ).await?;
+        std::sync::Arc::new(redis_conn_manager),
+    )
+    .await?;
 
     // Initialize Prometheus metrics exporter
     let _metrics_handle =
